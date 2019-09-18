@@ -1,0 +1,4223 @@
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  1
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017         include "P16f72.inc"
+Warning [231] : found lower case match for include filename
+               00001         LIST
+               00002 ; P16F72.INC  Standard Header File, Version 1.01    Microchip Technology, Inc.
+               00269         LIST
+               00018         include "system.inc"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 ; crystal oscillator on, WDT off, copy protection on, power on timer enabled
+002007 3FA1    00017         __CONFIG        _XT_OSC & _WDT_OFF & _CP_ALL & _PWRTE_ON & _BODEN_OFF
+               00018 
+               00019 ; SELECT PRODUCTION OR PROTOTYPE HARDWARE
+               00020 IFNDEF SYSTEM_VERSION
+               00021 
+               00022 PROTOTYPE_1     EQU     0X00    ; 1ST VERSION ON VEROBOARD
+               00023 PROTOTYPE_2     EQU     0X01    ; 1ST PCB PROTOTYPE (VERSION A)
+               00024 PRODUCTION      EQU     0X02    ; PRODUCTION VERSION (REV 1)
+               00025 
+               00026 ; SELECT HARDWARE PLATFORM HERE
+               00027 ;SYSTEM_VERSION EQU     PROTOTYPE_1 ; veroboard
+               00028 ;SYSTEM_VERSION EQU     PROTOTYPE_2 ; prototype pcb
+               00029 SYSTEM_VERSION  EQU     PRODUCTION  ; production version rev 1 and above
+               00030 
+               00031 ; SPECIAL BUILDS
+               00032 ;NORMAL EQU     0X01
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  2
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00033 RALLY   EQU     0X14
+               00034 
+               00035 ; DEFINE S/W VERSION HERE
+               00036 SOFTWARE_VERSION_HI     EQU     D'2'
+               00037 SOFTWARE_VERSION_LO     EQU     D'0'
+               00038 
+               00039 ENDIF
+               00040 
+               00041 ; RAM variables (BANK 0)
+               00042 
+               00043 ; display memory
+  00000020     00044 DIG1    EQU             0X20
+  00000021     00045 DIG2    EQU             0X21
+  00000022     00046 DIG3    EQU             0X22
+  00000023     00047 DIG4    EQU             0X23
+  00000024     00048 DIG5    EQU             0X24
+  00000025     00049 DIG6    EQU             0X25
+  00000026     00050 DIG7    EQU             0X26
+               00051 
+               00052 ; ISR context saving
+  00000027     00053 STATUS_TEMP     EQU     0X27
+  00000028     00054 W_TEMP          EQU     0X28
+               00055 ;
+               00056 
+               00057 ; pause variables
+  00000029     00058 PTEMP1  EQU             0X29
+  00000030     00059 PTEMP2  EQU             0X30
+               00060 
+               00061 ; temp variables
+  00000031     00062 TEMP1   EQU             0X31
+               00063 
+               00064 ; countdowm timer values
+  00000032     00065 HOUR    EQU             0x32
+  00000033     00066 MIN             EQU             0x33
+  00000034     00067 SEC             EQU             0x34
+  00000035     00068 HUN             EQU             0x35
+               00069 
+               00070 ; clock values
+  00000036     00071 C_HOUR  EQU             0x36
+  00000037     00072 C_MIN   EQU             0x37
+  00000038     00073 C_SEC   EQU             0x38
+               00074 
+               00075 ; alarm values
+  00000039     00076 A_HOUR  EQU             0x39
+  0000003A     00077 A_MIN   EQU             0x3A
+               00078 
+               00079 ; multiplexer variables
+  0000003B     00080 MPX_DIGIT       EQU     0x3B
+               00081 
+               00082 ; GENERAL PURPOSE
+  0000003C     00083 COUNTER EQU 0X3C
+               00084 
+               00085 ; INTERRUPT VARIABLES
+  0000003D     00086 ITEMP1  EQU     0X3D
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  3
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+  0000003E     00087 ICOUNTER        EQU 0X3E
+               00088 
+  0000003F     00089 SUBTICKS        EQU 0X3F
+  00000040     00090 ISECOND         EQU 0X40
+  00000041     00091 IHSECOND        EQU 0X41
+  00000042     00092 ITSECOND        EQU 0X42
+               00093 
+               00094 ; KEYBOARD
+  00000043     00095 KEY_COL EQU     0X43
+  00000044     00096 CURRENT_KEY     EQU     0X44
+  00000045     00097 TEMP_KEY        EQU     0X45
+  00000046     00098 LAST_KEY        EQU     0X46
+               00099 
+               00100 ; MODE STATE VARIABLE FOR VARIOUS FUNCTIONS
+  00000047     00101 MODE    EQU 0X47        ; MAIN SYSTEM MODE
+  00000048     00102 CD_MODE EQU 0X48        ; COUNTDOWN MODE
+  00000049     00103 TM_MODE EQU 0X49        ; TIMER MODE
+  0000004A     00104 AL_MODE EQU 0X4A        ; ALARM MODE
+               00105 
+               00106 ; MATHS VARIABLES
+  0000004B     00107 D_MOD   EQU     0X4B
+  0000004C     00108 D_NUM   EQU     0X4C
+  0000004D     00109 D_DIV   EQU     0X4D
+               00110 
+  0000004E     00111 CURSOR  EQU     0X4E
+  0000004F     00112 KEY_COUNT       EQU     0X4F
+               00113 
+               00114 ; VARIOUS TICKS
+  00000050     00115 TICKS   EQU     0X50
+               00116 
+  00000051     00117 IN_KEY  EQU     0X51
+               00118 
+               00119 ; temp variables
+  00000052     00120 TEMP2   EQU             0X52
+               00121 
+  00000053     00122 INT_CORRECT     EQU             0X53
+  00000054     00123 INT_CURSOR      EQU             0X54
+               00124 
+  00000055     00125 BRIGHTNESS      EQU             0X55
+  00000056     00126 FRAME_COUNT     EQU             0X56
+               00127 
+  00000057     00128 BUZZER_COUNT    EQU             0X57
+               00129 
+               00130 ; SAVE THIS DURING INTERRUPTS
+  00000058     00131 IFSR    EQU     0X58
+  00000059     00132 ID_MOD  EQU     0X59
+  0000005A     00133 ID_NUM  EQU     0X5A
+  0000005B     00134 ID_DIV  EQU     0X5B
+               00135 
+  0000005C     00136 SNOOZE_MINS     EQU     0X5C
+  0000005D     00137 MORE_FLAGS      EQU     0X5D
+               00138 
+  0000005E     00139 LP_MODE         EQU     0X5E
+               00140 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  4
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+  0000005F     00141 MPX_CYCLES      EQU 0x5F
+               00142 
+               00143 ; *********
+               00144 ; CONSTANTS
+               00145 ; *********
+               00146 
+               00147 ; MORE_FLAGS FLAGS
+  00000000     00148 TICK_EN         EQU     0       ; COUNTDOWN TICKS ENABLED
+  00000001     00149 TONE_TOG        EQU     1       ; 
+  00000002     00150 ALARM_TONE      EQU     2       ; f OR f/2
+  00000003     00151 TICKING         EQU     3       ; IS THIS A TICK SOUND OR NORMAL SOUND
+  00000004     00152 UP_DOWN         EQU     4       ; ARE WE COUNTING DOWN (0) OR UP (1)?
+  00000005     00153 MIL_MODE        EQU     5       ; 24 hour clock display
+  00000006     00154 FREEZE          EQU     6       ; freeze display
+  00000007     00155 TIMER_RUN       EQU     7       ; HAS TIMER BEEN RUN SINCE RESET (CAN WE ACCEPT NEW TIME FROM KB?)
+               00156 
+               00157 ; TIMING CONSTANTS
+  00000014     00158 SUBTICK_COUNT EQU D'20'
+  0000000A     00159 TSECOND_COUNT EQU D'10'
+  00000005     00160 HSECOND_COUNT EQU D'5'
+  00000002     00161 SECOUND_COUNT EQU D'2'
+               00162 
+               00163 
+  0000000F     00164 MODE_KEY        EQU 0X0F
+  0000000E     00165 SET_KEY         EQU 0X0E
+               00166 
+               00167 ; MODES
+  00000000     00168 MODE_CD EQU     0X00
+  00000001     00169 MODE_TM EQU     0X01
+  00000002     00170 MODE_AL EQU     0X02
+  00000003     00171 MAX_MODE        EQU     MODE_AL + 0X01
+               00172 
+               00173 ; COUNTDOWN MODE
+  00000000     00174 CD_PAUSED               EQU     0X00
+  00000001     00175 CD_RUNNING              EQU     0X01
+               00176 
+               00177 ; IN TIMER MODE
+  00000000     00178 TM_TIME                 EQU     0X00
+  00000001     00179 TM_SET                  EQU     0X01
+               00180 
+               00181 ; TIME DISPLAY MODE
+  00000001     00182 TM_DATETIME             EQU     0X01
+  00000002     00183 TM_ALTDATETIME  EQU     0X02
+  00000003     00184 TM_DATE                 EQU     0X03
+               00185 
+               00186 ;TM_ALARM_ON            EQU     0X04
+               00187 
+               00188 ; IN ALARM MODE
+  00000000     00189 AL_SHOW                 EQU     0X00
+  00000001     00190 AL_SET                  EQU     0X01
+  00000002     00191 AL_VER                  EQU     0X02
+               00192 
+  00000004     00193 LONG_KEY        EQU     0X04
+               00194 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  5
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00195 ; SPECIAL LED CHARACTERS
+  0000000A     00196 BLANK           EQU 0X0A
+  0000000B     00197 COLONS          EQU 0X0B
+  0000000C     00198 DOTS            EQU 0X0C
+  0000000D     00199 DASH            EQU     0X0D
+  0000000E     00200 UNDERSCORE      EQU 0X0E
+  0000000F     00201 BARS            EQU     0X0F
+  00000010     00202 EQUALS          EQU     0X10
+  00000011     00203 LETTER_T        EQU     0X11
+  00000012     00204 LETTER_E        EQU     0X12
+  00000013     00205 SET_COLON       EQU     0X13
+  00000014     00206 LETTER_A        EQU     0X14
+  00000015     00207 LETTER_L        EQU     0X15
+  00000016     00208 LETTER_N        EQU     0X16
+  00000017     00209 LETTER_P        EQU     0X17
+  00000018     00210 LETTER_R        EQU     0X18
+  00000019     00211 VER_COLON       EQU     0X19
+  0000001A     00212 COLON_12H       EQU     0X1A
+  0000001B     00213 COLON_TOP       EQU     0X1B
+  0000001C     00214 COLON_BOT       EQU     0X1C
+               00215 
+               00216 
+               00217 ; TICKS BITS (AND OTHER FLAGS)
+  00000000     00218 TICKS_DUMMY             EQU     0
+  00000001     00219 TICKS_HSECOND   EQU     1
+  00000002     00220 TM_ALARM_ON             EQU 2   ; CLOCK ALARM IS SOUNDING
+  00000003     00221 CD_ALARM_ON             EQU 3   ; COUNTDOWN ALARM IS SOUNDING
+  00000004     00222 KEYBEEP                 EQU 4   ; KEYBEEP
+  00000005     00223 BUZZER_PHASE    EQU 5
+  00000006     00224 DISPLAY_INT             EQU     6       ; INDICATE BACKGROUND DISPLAY INTERRUPT HAS OCCURRED
+  00000007     00225 TICKS_BUZZER    EQU     7
+               00226 
+               00227 
+  0000000A     00228 SNOOZE_DURATION EQU D'10'; 10 MINS - 1 MIN MORE SLEEP THAN OTHER ALARM CLOCKS!
+               00229 
+               00230 
+               00231 ; pin definitions
+  00000000     00232 DIGIT1  EQU             0       ;PORT A o/p
+  00000001     00233 DIGIT2  EQU             1
+  00000002     00234 DIGIT3  EQU             2
+  00000003     00235 DIGIT4  EQU             3
+  00000004     00236 DIGIT5  EQU             4
+  00000005     00237 DIGIT6  EQU             5
+               00238 
+  00000000     00239 BUZZER  EQU             0       ;PORT B i/p - o/p
+  00000001     00240 KB_COL3 EQU             1
+  00000002     00241 KB_COL2 EQU             2
+  00000003     00242 KB_COL1 EQU             3
+  00000004     00243 KB_ROW4 EQU             4
+  00000005     00244 KB_ROW3 EQU             5
+  00000006     00245 KB_ROW2 EQU             6
+  00000007     00246 KB_ROW1 EQU             7
+               00247 
+  00000000     00248 SEG_A   EQU             0       ;PORT C i/p
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  6
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+  00000001     00249 SEG_B   EQU             1
+  00000002     00250 SEG_C   EQU             2
+  00000003     00251 SEG_D   EQU             3
+  00000004     00252 SEG_E   EQU             4
+  00000005     00253 SEG_F   EQU             5
+  00000006     00254 SEG_G   EQU             6
+  00000007     00255 DIGIT7  EQU             7
+               00019         include "macros.inc"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 ; A IS REGISTER, B IS LITERAL
+               00018 ; ZERO FLAG SET IF A==B
+               00019 IFEQU   MACRO A,B
+               00020                 MOVLW   B
+               00021                 SUBWF   A,W
+               00022                 ENDM
+               00023 
+               00024 ;------------------
+               00025 MOVLF MACRO REG,VAL
+               00026         MOVLW VAL
+               00027         MOVWF REG
+               00028         ENDM
+               00029 ;------------------
+               00030 
+               00031 CASE:   MACRO   REG,STATE
+               00032         MOVLW   STATE
+               00033         SUBWF   REG,W
+               00034         BTFSC   STATUS,Z
+               00035         ENDM
+               00036 
+               00037 CASENOT:        MACRO   REG,STATE
+               00038         MOVLW   STATE
+               00039         SUBWF   REG,W
+               00040         BTFSS   STATUS,Z
+               00041         ENDM
+               00042 
+               00043 ; MOVE REG2 TO REG1
+               00044 MOVFF   MACRO   REG1,REG2
+               00045         MOVFW   REG2
+               00046         MOVWF   REG1
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  7
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00047         ENDM
+               00048 
+               00049 DISPLAY MACRO VALUE,POS
+               00050         MOVLF   INT_CURSOR,POS
+               00051         MOVFW   VALUE
+               00052         CALL    SHOW_DIGIT
+               00053         ENDM
+               00054 
+               00055 KEYSOUND        MACRO
+               00056         BCF             MORE_FLAGS,TICKING
+               00057         MOVLF   BUZZER_COUNT,0X30 ;0X1F
+               00058         BSF             TICKS,KEYBEEP
+               00059         ENDM
+               00060 
+               00061 TICKSOUND       MACRO
+               00062         BSF             MORE_FLAGS,TICKING
+               00063         MOVLF   BUZZER_COUNT,0X20 ;0X1F
+               00064         BSF             TICKS,KEYBEEP
+               00065         ENDM
+               00066 
+               00067 TOGGLEBIT       MACRO   REG,BIT
+               00068         CLRF    TEMP1
+               00069         BSF             TEMP1,BIT
+               00070         MOVFW   TEMP1
+               00071         XORWF   REG,F   
+               00072         ENDM
+               00073 
+               00074 ; 1ST PCB VERSION HAD THE BUZZER CONNECTED TO VCC
+               00075 ; OTHERS ARE CONNECTED TO GND
+               00076 
+               00077 BUZZER_OFF      MACRO
+               00078         IF SYSTEM_VERSION == PROTOTYPE_2
+               00079                 BSF     PORTB,BUZZER
+               00080         ELSE
+               00081                 BCF     PORTB,BUZZER
+               00082         ENDIF
+               00083         ENDM
+               00084 
+               00085 BUZZER_ON       MACRO
+               00086         IF SYSTEM_VERSION == PROTOTYPE_2
+               00087                 BCF     PORTB,BUZZER
+               00088         ELSE
+               00089                 BSF     PORTB,BUZZER
+               00090         ENDIF
+               00091         ENDM
+               00092 
+               00020 
+               00021 ;---------------------------------------------------------
+               00022 
+               00023 ; reset vector
+0000           00024         ORG     0X00
+               00025 
+0000 2D15      00026     GOTO    START
+               00027 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  8
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00028 ; interrupt vector
+0004           00029         ORG     0X04
+0004 28AD      00030         GOTO    INT
+               00031 
+               00032 ;---------------------------------------------------------
+               00033 
+               00034         include "initialise.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+0005 00017 INITIALISE
+               00018 
+               00019         ; configure pull-ups/interrups edge config/clock prescaler
+0005 1683      00020         BSF     STATUS,RP0              ; BANK 1
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+0006 0181      00021         CLRF    OPTION_REG
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+0007 1281      00022         BCF             OPTION_REG,T0CS
+               00023 
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+0008 1101      00024         BCF             OPTION_REG,PS2
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+0009 1081      00025         BCF             OPTION_REG,PS1
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+000A 1001      00026         BCF             OPTION_REG,PS0
+               00027 
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+000B 1381      00028         BCF             OPTION_REG,NOT_RBPU
+               00029 
+               00030         ; configure I/O pins
+               00031 
+000C 1683      00032         BSF     STATUS,RP0              ; BANK 1
+000D 3000      00033         MOVLW   B'00000000'             ; Set Port A I/O pins
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+000E 0085      00034         MOVWF   TRISA
+               00035 
+000F 30F0      00036         MOVLW   B'11110000'             ; Set Port B I/O pins
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+0010 0086      00037         MOVWF   TRISB
+               00038 
+0011 3000      00039         MOVLW   B'0000000'             ; Set Port C I/O pins
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE  9
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+0012 0087      00040         MOVWF   TRISC
+               00041         ;
+               00042 
+               00043         ;CONFIGURE TIMER 2
+0013 1283      00044     BCF     STATUS,RP0              ; BANK 0
+0014 0192      00045         CLRF    T2CON
+0015 1512      00046         BSF             T2CON,TMR2ON
+               00047 
+0016 1312      00048         BCF             T2CON,TOUTPS3
+0017 1292      00049         BCF             T2CON,TOUTPS2
+0018 1212      00050         BCF             T2CON,TOUTPS1
+0019 1592      00051         BSF             T2CON,TOUTPS0
+               00052 
+001A 1092      00053         BCF             T2CON,T2CKPS1
+001B 1012      00054         BCF             T2CON,T2CKPS0
+               00055 
+               00056         ; CONFIGURE PERIPHERAL INTERRUPTS
+001C 1683      00057         BSF     STATUS,RP0              ; BANK 1
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+001D 018C      00058         CLRF    PIE1
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+001E 148C      00059         BSF             PIE1,TMR2IE                     ; TIMER 2 INTERRUPT
+               00060         ;       
+               00061 
+               00062         ; configure interrupts
+001F 1283      00063         BCF     STATUS,RP0              ; BANK 0
+0020 018B      00064         CLRF    INTCON                  
+0021 168B      00065         BSF             INTCON,T0IE                     ; interrupt on TMR0
+               00066 
+0022 1283      00067     BCF     STATUS,RP0              ; BANK 0
+               00068 
+0023 0185      00069     CLRF    PORTA                   ; clear port a
+0024 0186      00070     CLRF    PORTB                   ; clear port b
+0025 0187      00071     CLRF    PORTC                   ; clear port c
+               00072 
+0026 01BB      00073         CLRF    MPX_DIGIT
+0027 01BC      00074         CLRF    COUNTER
+               00075 
+               00076         ; INIT TIMER VARIABLES
+               00077         MOVLF   SUBTICKS,SUBTICK_COUNT
+0028 3014          M         MOVLW VAL
+0029 00BF          M         MOVWF REG
+               00078         MOVLF   ITSECOND,TSECOND_COUNT
+002A 300A          M         MOVLW VAL
+002B 00C2          M         MOVWF REG
+               00079         MOVLF   IHSECOND,HSECOND_COUNT
+002C 3005          M         MOVLW VAL
+002D 00C1          M         MOVWF REG
+               00080         MOVLF   ISECOND,SECOUND_COUNT
+002E 3002          M         MOVLW VAL
+002F 00C0          M         MOVWF REG
+               00081 
+               00082         ; KEYBOARD COLUMN SCAN VARIABLES ETC
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 10
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0030 01C3      00083         CLRF    KEY_COL
+0031 01CF      00084         CLRF    KEY_COUNT
+               00085         MOVLF   CURRENT_KEY,0XFF
+0032 30FF          M         MOVLW VAL
+0033 00C4          M         MOVWF REG
+               00086         MOVLF   TEMP_KEY,0XFF
+0034 30FF          M         MOVLW VAL
+0035 00C5          M         MOVWF REG
+               00087         MOVLF   LAST_KEY,0XFF
+0036 30FF          M         MOVLW VAL
+0037 00C6          M         MOVWF REG
+               00088         MOVLF   IN_KEY,BLANK
+0038 300A          M         MOVLW VAL
+0039 00D1          M         MOVWF REG
+               00089 
+               00090 
+               00091         ; INIT TIME ETC
+               00092 
+003A 01D0      00093         CLRF    TICKS
+               00094 
+               00095         ; countdowm timer values
+003B 01B2      00096         CLRF    HOUR
+003C 01B3      00097         CLRF    MIN
+003D 01B4      00098         CLRF    SEC
+003E 01B5      00099         CLRF    HUN
+               00100         
+               00101         ; clock values
+               00102         MOVLF   C_HOUR,D'12'
+003F 300C          M         MOVLW VAL
+0040 00B6          M         MOVWF REG
+0041 01B7      00103         CLRF    C_MIN
+0042 01B8      00104         CLRF    C_SEC
+               00105         
+               00106         ; alarm values
+               00107         MOVLF   A_HOUR,0XFF
+0043 30FF          M         MOVLW VAL
+0044 00B9          M         MOVWF REG
+               00108         MOVLF   A_MIN,0XFF
+0045 30FF          M         MOVLW VAL
+0046 00BA          M         MOVWF REG
+               00109         
+               00110 
+               00111         ; INIT MODES
+               00112         MOVLF   MODE,MODE_CD
+0047 3000          M         MOVLW VAL
+0048 00C7          M         MOVWF REG
+0049 01C8      00113         CLRF    CD_MODE
+004A 01C9      00114         CLRF    TM_MODE
+004B 01CA      00115         CLRF    AL_MODE
+               00116 
+004C 01DC      00117         CLRF    SNOOZE_MINS
+004D 01DD      00118         CLRF    MORE_FLAGS
+004E 01DE      00119         CLRF    LP_MODE
+004F 16DD      00120         BSF             MORE_FLAGS,MIL_MODE; start in 24 hour mode
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 11
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00121 
+               00122         ; PUT VALID VALUES IN DISPLAY MEMORY BEFORE STARTING MULTIPLEXER!
+               00123         ; 00:00:00
+0050 3000      00124         MOVLW   0X00
+0051 00A0      00125         MOVWF   DIG1
+0052 00A1      00126         MOVWF   DIG2
+0053 00A2      00127         MOVWF   DIG3
+0054 00A3      00128         MOVWF   DIG4
+0055 00A4      00129         MOVWF   DIG5
+0056 00A5      00130         MOVWF   DIG6
+               00131         MOVLF   DIG7,COLONS
+0057 300B          M         MOVLW VAL
+0058 00A6          M         MOVWF REG
+               00132 
+0059 01D5      00133         CLRF    BRIGHTNESS
+005A 01D6      00134         CLRF    FRAME_COUNT
+               00135 
+               00136         ; SET TIMER 2 PERIOD REGISTER
+005B 1683      00137         BSF     STATUS,RP0              ; BANK 1
+005C 301F      00138         MOVLW   0X1F
+Message [302] : Register in operand not in bank 0. Ensure bank bits are correct.
+005D 0092      00139         MOVWF   PR2
+               00140 
+               00141         ;ENABLE TIMER 2
+005E 1283      00142     BCF     STATUS,RP0              ; BANK 0
+               00143 
+               00144         BUZZER_OFF
+                   M         IF SYSTEM_VERSION == PROTOTYPE_2
+                   M                 BSF     PORTB,BUZZER
+                   M         ELSE
+005F 1006          M                 BCF     PORTB,BUZZER
+                   M         ENDIF
+               00145         
+0060 2118      00146         CALL UPDATE_DISPLAY
+               00147 
+               00148 ; ENABLE INTERRUPTS
+0061 178B      00149         BSF             INTCON,GIE
+               00150 
+0062 0008      00151         RETURN
+               00035         include "tables.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 12
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00015 
+               00016 ; KEYBOARD MAPPING
+               00017 
+0063 0782      00018 KEY_MAPPING     ADDWF   PCL,F
+               00019 ;       XXXX CC RR
+               00020 
+               00021 ;COLUMN 1
+0064 3401      00022                 RETLW   1
+0065 3404      00023                 RETLW   4
+0066 3407      00024                 RETLW   7
+0067 340F      00025                 RETLW   BARS
+               00026 
+               00027 ;COLUMN 2
+0068 3402      00028                 RETLW   2
+0069 3405      00029                 RETLW   5
+006A 3408      00030                 RETLW   8
+006B 3400      00031                 RETLW   0
+               00032 
+               00033 ;COLUMN 3
+006C 3403      00034                 RETLW   3
+006D 3406      00035                 RETLW   6
+006E 3409      00036                 RETLW   9
+006F 340E      00037                 RETLW   UNDERSCORE
+               00038 
+               00039         IF SYSTEM_VERSION == PROTOTYPE_1
+               00040  
+               00041 ; LED bit patterns (1st prototype - veroboard)
+               00042 PTRN    ADDWF   PCL,F
+               00043 ;                 xGFEDCBA
+               00044                 RETLW   B'01000000'     ; '0'
+               00045                 RETLW   B'01111001'     ; '1'
+               00046                 RETLW   B'00100100'     ; '2'
+               00047                 RETLW   B'00110000'     ; '3'
+               00048                 RETLW   B'00011001'     ; '4'
+               00049                 RETLW   B'00010010'     ; '5'
+               00050                 RETLW   B'00000010'     ; '6'
+               00051                 RETLW   B'01111000'     ; '7'
+               00052                 RETLW   B'00000000'     ; '8'
+               00053                 RETLW   B'00010000'     ; '9'
+               00054                 RETLW   B'01111111'     ; BLANK (A)
+               00055                 RETLW   B'01110000'     ; COLONS(B)
+               00056                 RETLW   B'01110011'     ; DOTS  (C)
+               00057                 RETLW   B'00111111'     ; DASH  (D)
+               00058                 RETLW   B'01110111'     ; UNDERSCORE  (E)
+               00059                 RETLW   B'00110110'     ; BARS  (F)
+               00060                 RETLW   B'00110111'     ; EQUALS  (10)
+               00061                 RETLW   B'00000111'     ; 'T' (11)
+               00062                 RETLW   B'00000110'     ; 'E' (12)
+               00063                 RETLW   B'00000011'     ; COLONS FOR TIME/ALARM SETTING (13)
+               00064                 RETLW   B'00001000'     ; 'A' (14)
+               00065                 RETLW   B'01000111'     ; 'L' (15)
+               00066                 RETLW   B'01001000'     ; 'N' (16)
+               00067                 RETLW   B'00001100'     ; 'P' (17)
+               00068 ;               RETLW   B'01001110'     ; 'R' (18)
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 13
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00069                 RETLW   B'00101111'     ; 'R' (18)
+               00070                 RETLW   B'01111000'     ; COLONS FOR S/W VERSION (19)
+               00071                 RETLW   B'01111100'     ; COLONS FOR 12 HOUR MODE (1A)
+               00072                 RETLW   B'01110110' ; FREEZE MODE COLONS TOP (1B)
+               00073                 RETLW   B'01111001' ; FREEZE MODE COLONS BOTTOM (1C)
+               00074                 RETLW   B'01111111'     ; ALL OFF
+               00075         ELSE
+               00076 
+               00077 ; LED bit patterns (PCB versions)
+0070 0782      00078 PTRN    ADDWF   PCL,F
+               00079 ;                 xABCDEFG
+0071 3481      00080                 RETLW   B'10000001'     ; '0'
+0072 34CF      00081                 RETLW   B'11001111'     ; '1'
+0073 3492      00082                 RETLW   B'10010010'     ; '2'
+0074 3486      00083                 RETLW   B'10000110'     ; '3'
+0075 34CC      00084                 RETLW   B'11001100'     ; '4'
+0076 34A4      00085                 RETLW   B'10100100'     ; '5'
+0077 34A0      00086                 RETLW   B'10100000'     ; '6'
+0078 348F      00087                 RETLW   B'10001111'     ; '7'
+0079 3480      00088                 RETLW   B'10000000'     ; '8'
+007A 3484      00089                 RETLW   B'10000100'     ; '9'
+007B 34FF      00090                 RETLW   B'11111111'     ; BLANK (A)
+007C 3487      00091                 RETLW   B'10000111'     ; COLONS(B)
+007D 34E7      00092                 RETLW   B'11100111'     ; DOTS  (C)
+007E 34FE      00093                 RETLW   B'11111110'     ; DASH  (D)
+007F 34F7      00094                 RETLW   B'11110111'     ; UNDERSCORE  (E)
+0080 34B6      00095                 RETLW   B'10110110'     ; BARS  (F)
+0081 34F6      00096                 RETLW   B'11110110'     ; EQUALS  (10)
+0082 34F0      00097                 RETLW   B'11110000'     ; 'T' (11)
+0083 34B0      00098                 RETLW   B'10110000'     ; 'E' (12)
+0084 34D0      00099                 RETLW   B'11010000'     ; COLONS FOR TIME/ALARM SETTING (13)
+0085 3488      00100                 RETLW   B'10001000'     ; 'A' (14)
+0086 34F1      00101                 RETLW   B'11110001'     ; 'L' (15)
+0087 3489      00102                 RETLW   B'10001001'     ; 'N' (16)
+0088 3498      00103                 RETLW   B'10011000'     ; 'P' (17)
+               00104 ;               RETLW   B'10111001'     ; 'R' (18) (tall 'R')
+0089 34FA      00105                 RETLW   B'11111010'     ; 'R' (18) (short 'R')
+008A 34A7      00106                 RETLW   B'10100111'     ; COLONS FOR S/W VERSION (19)
+008B 34AF      00107                 RETLW   B'10101111'     ; COLONS FOR 24H CLOCK (1A)
+008C 34E7      00108                 RETLW   B'11100111' ; FREEZE MODE COLONS TOP (1B)
+008D 349F      00109                 RETLW   B'10011111' ; FREEZE MODE COLONS BOTTOM (1C)
+008E 34FF      00110                 RETLW   B'11111111'     ; ALL OFF
+               00111         ENDIF
+               00112 
+               00113 
+               00114 ; RETURN THE MAX VALUES+1 FOR TIMES AT EACH CURSOR POSITION
+008F 00115 TIME_LIMITS
+008F 0782      00116                 ADDWF   PCL,F
+               00117 
+0090 3400      00118                 RETLW   D'0'    ; DUMMY VALUE
+0091 3400      00119                 RETLW   D'0'    ; DUMMY VALUE
+0092 3403      00120                 RETLW   D'3'    ; 2
+0093 3404      00121                 RETLW   D'4'    ; 3
+0094 3406      00122                 RETLW   D'6'    ; 5
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 14
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0095 340A      00123                 RETLW   D'10'   ; 9
+               00124 
+               00125 ; TODO: XOR this lot & remove XOR in multiplexer.asm
+0096 00126 DIGIT_LOOKUP
+0096 0782      00127                 ADDWF   PCL,F
+0097 3420      00128                 RETLW   20      ; PIN 6
+0098 3408      00129                 RETLW   08      ; PIN 4
+0099 3404      00130                 RETLW   04      ; PIN 3
+009A 3402      00131                 RETLW   02      ; PIN 2
+009B 3410      00132                 RETLW   10      ; PIN 5
+009C 3401      00133                 RETLW   01      ; PIN 1
+               00036         include "maths.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 ; on strt D_DIV=divisor, D_NUM=numerator
+               00018 ; on exit D_MOD=modulus, D_NUM=remainder
+009D 00019 DIV
+009D 01CB      00020         CLRF    D_MOD
+009E 084D      00021         MOVF    D_DIV,W
+009F 00022 LOOP_DIV
+009F 02CC      00023         SUBWF   D_NUM,F
+00A0 1803      00024         BTFSC   STATUS,C
+00A1 28A5      00025         GOTO    LD1
+               00026 
+00A2 084D      00027         MOVFW   D_DIV
+00A3 07CC      00028         ADDWF   D_NUM,F
+               00029         
+00A4 0008      00030         RETURN
+00A5 00031 LD1
+00A5 0ACB      00032         INCF    D_MOD,F
+00A6 289F      00033         GOTO    LOOP_DIV
+               00034 
+               00035 
+               00036 ; on strt D_MOD=M1, D_NUM=M2
+               00037 ; on exit W=M1*M2
+00A7 00038 MUL
+00A7 0103      00039         CLRW
+00A8 00040 MUL1
+00A8 074B      00041         ADDWF   D_MOD,W
+00A9 03CC      00042         DECF    D_NUM,F
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 15
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+00AA 1903      00043         BTFSC   STATUS,Z
+00AB 0008      00044         RETURN
+00AC 28A8      00045         GOTO    MUL1
+               00046         
+               00037         include "interrupts.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 
+               00018 ;***********************
+               00019 ; ISR
+               00020 
+00AD 00021 INT
+               00022         ; save system status
+00AD 00A8      00023         MOVWF   W_TEMP          ; Copy W to TEMP register,
+00AE 0803      00024         MOVFW   STATUS  ; status to be saved into W
+00AF 00A7      00025         MOVWF   STATUS_TEMP     ; Save status to STATUS_TEMP register
+00B0 0183      00026         CLRF    STATUS
+               00027         MOVFF   IFSR,FSR
+00B1 0804          M         MOVFW   REG2
+00B2 00D8          M         MOVWF   REG1
+               00028         MOVFF   ID_MOD,D_MOD
+00B3 084B          M         MOVFW   REG2
+00B4 00D9          M         MOVWF   REG1
+               00029         MOVFF   ID_NUM,D_NUM
+00B5 084C          M         MOVFW   REG2
+00B6 00DA          M         MOVWF   REG1
+               00030         MOVFF   ID_DIV,D_DIV
+00B7 084D          M         MOVFW   REG2
+00B8 00DB          M         MOVWF   REG1
+               00031 
+               00032         ; TIMER 2 interrupt (HANDLE SOUNDS)
+00B9 20E9      00033         CALL    TIMER2_INTERRUPT
+               00034 
+               00035         ; multiplexer interrupt
+00BA 190B      00036         BTFSC   INTCON,T0IF
+00BB 228E      00037         CALL    MPX_INTERRUPT
+               00038 
+               00039         ; restore system status
+               00040         MOVFF   D_MOD,ID_MOD
+00BC 0859          M         MOVFW   REG2
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 16
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+00BD 00CB          M         MOVWF   REG1
+               00041         MOVFF   D_NUM,ID_NUM
+00BE 085A          M         MOVFW   REG2
+00BF 00CC          M         MOVWF   REG1
+               00042         MOVFF   D_DIV,ID_DIV
+00C0 085B          M         MOVFW   REG2
+00C1 00CD          M         MOVWF   REG1
+               00043         MOVFF   FSR,IFSR
+00C2 0858          M         MOVFW   REG2
+00C3 0084          M         MOVWF   REG1
+00C4 0827      00044         MOVF    STATUS_TEMP,W
+00C5 0083      00045         MOVWF   STATUS          ; Move W into STATUS register
+00C6 0828      00046         MOVF    W_TEMP,W
+               00047 
+00C7 0009      00048         RETFIE
+               00049 
+               00050 ;***********************
+               00051 
+00C8 00052 ITICKS
+               00053         ; RESET TICK COUNTER
+               00054         MOVLF   SUBTICKS,SUBTICK_COUNT
+00C8 3014          M         MOVLW VAL
+00C9 00BF          M         MOVWF REG
+               00055 
+               00056         ; NOW DEAL WITH 100Hz EVENTS
+00CA 223B      00057         CALL SCAN_KEYBOARD
+               00058 
+               00059         CASE CD_MODE,CD_RUNNING
+00CB 3001          M         MOVLW   STATE
+00CC 0248          M         SUBWF   REG,W
+00CD 1903          M         BTFSC   STATUS,Z
+00CE 2498      00060         CALL UPDATE_COUNTDOWN
+               00061 
+               00062         ; FORCE FOREGROUND PROCESS TO UPDATE THE DISPLAY
+00CF 1750      00063         BSF     TICKS,DISPLAY_INT
+               00064 
+               00065         ; UPDATE 1/10 SECONDS COUNTER
+00D0 03C2      00066         DECF    ITSECOND,F
+00D1 1903      00067         BTFSC   STATUS,Z
+00D2 20D4      00068         CALL    ITSECONDS
+               00069 
+00D3 0008      00070         RETURN
+               00071 
+00D4 00072 ITSECONDS
+               00073         ; RESET 1/10 SECONDS COUNTER
+               00074         MOVLF   ITSECOND,TSECOND_COUNT
+00D4 300A          M         MOVLW VAL
+00D5 00C2          M         MOVWF REG
+               00075 
+               00076         ; DEAL WITH 10Hz EVENTS
+               00077 
+               00078         ; UPDATE HALF SECONDS COUNTER
+00D6 03C1      00079         DECF    IHSECOND,F
+00D7 1903      00080         BTFSC   STATUS,Z
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 17
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+00D8 20DA      00081         CALL    IHSECONDS
+               00082 
+00D9 0008      00083         RETURN
+               00084 
+00DA 00085 IHSECONDS
+               00086 
+               00087         ; RESET HALF SECONDS COUNTER
+               00088         MOVLF   IHSECOND,HSECOND_COUNT
+00DA 3005          M         MOVLW VAL
+00DB 00C1          M         MOVWF REG
+               00089 
+               00090         ; NOW DEAL WITH 0.5Hz EVENTS
+               00091 
+               00092         ; FLIP THE HALF SECOND TICK
+00DC 0850      00093         MOVFW   TICKS
+00DD 3A02      00094         XORLW   0X02
+00DE 00D0      00095         MOVWF   TICKS
+               00096 
+               00097         ; INC KEYPRESS TIMER
+00DF 0ACF      00098         INCF KEY_COUNT,F
+               00099 
+               00100         ; UPDATE SECONDS COUNTER
+00E0 03C0      00101         DECF    ISECOND,F
+00E1 1903      00102         BTFSC   STATUS,Z
+00E2 20E4      00103         CALL    ISECONDS
+               00104 
+00E3 0008      00105         RETURN
+               00106 
+00E4 00107 ISECONDS
+               00108 
+               00109         ; RESET SECONDS COUNTER
+               00110         MOVLF   ISECOND,SECOUND_COUNT
+00E4 3002          M         MOVLW VAL
+00E5 00C0          M         MOVWF REG
+               00111 
+               00112         ; NOW DEAL WITH 1Hz EVENTS
+00E6 2384      00113         CALL UPDATE_CLOCK
+               00114 
+00E7 23BE      00115         CALL MOMENTARILY_SHOW_CLOCK
+               00116 
+00E8 0008      00117         RETURN
+               00118 
+00E9 00119 TIMER2_INTERRUPT
+               00120 
+               00121         ; BUZZER OFF
+               00122         BUZZER_OFF
+                   M         IF SYSTEM_VERSION == PROTOTYPE_2
+                   M                 BSF     PORTB,BUZZER
+                   M         ELSE
+00E9 1006          M                 BCF     PORTB,BUZZER
+                   M         ENDIF
+               00123 
+               00124         ; TOGGLE f/2 COUNTER
+00EA 085D      00125         MOVFW   MORE_FLAGS
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 18
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+00EB 3A02      00126         XORLW   B'00000010'
+00EC 00DD      00127         MOVWF   MORE_FLAGS
+               00128 
+               00129         ; MAKE ALARM SOUNDS HERE
+00ED 08D7      00130         MOVF    BUZZER_COUNT,F
+00EE 1D03      00131         BTFSS   STATUS,Z
+00EF 03D7      00132         DECF    BUZZER_COUNT,F
+               00133 
+               00134         ; UPDATE ALARM COUNT IF SOUNDING
+00F0 0850      00135         MOVFW   TICKS
+00F1 391C      00136         ANDLW   B'00011100'; BITS 2, 3 AND 4
+00F2 1903      00137         BTFSC   STATUS,Z
+00F3 2917      00138         GOTO    T2I4
+               00139         
+               00140         ; IF ALARM TIMER HAS EXPIRED
+00F4 08D7      00141         MOVF    BUZZER_COUNT,F
+00F5 1D03      00142         BTFSS   STATUS,Z
+00F6 2903      00143         GOTO    T2I2
+               00144 
+               00145         ; CANCEL KEYBEEP
+00F7 1250      00146         BCF     TICKS,KEYBEEP
+               00147 
+               00148         ; TOGGLE BUZZER PHASE
+00F8 0850      00149         MOVFW   TICKS
+00F9 3A20      00150         XORLW   B'00100000'
+00FA 00D0      00151         MOVWF   TICKS
+               00152 
+00FB 3000      00153         MOVLW   0X00
+               00154 
+               00155         ; RESTART ALARM COUNT IF SOUNDING
+00FC 1950      00156         BTFSC   TICKS,TM_ALARM_ON
+00FD 30FF      00157         MOVLW   0XFF
+               00158 
+00FE 19D0      00159         BTFSC   TICKS,CD_ALARM_ON
+00FF 3080      00160         MOVLW   0X80
+               00161 
+               00162         ; KEEP BEEPING IN PHASE WITH HALF SECONDS
+0100 18D0      00163         BTFSC   TICKS,TICKS_HSECOND
+0101 3000      00164         MOVLW   0X00
+               00165 
+0102 00D7      00166         MOVWF   BUZZER_COUNT
+               00167 
+0103 00168 T2I2
+               00169         ; SOUND CONTINUOSLY IF KEYBEEP
+0103 1A50      00170         BTFSC   TICKS,KEYBEEP
+0104 2909      00171         GOTO    T2I5
+               00172 
+               00173         ; SOUND ALARM IF IN PHASE
+0105 1AD0      00174         BTFSC   TICKS,BUZZER_PHASE
+0106 2917      00175         GOTO    T2I4
+               00176 
+               00177         ; AND ON EACH HALF SECOND
+0107 18D0      00178         BTFSC   TICKS,TICKS_HSECOND
+0108 2917      00179         GOTO    T2I4
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 19
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00180 
+0109 00181 T2I5
+               00182         ; TOGGLE BUZZER
+               00183 
+               00184         ; NORMAL SOUND?
+0109 1DDD      00185         BTFSS   MORE_FLAGS,TICKING
+010A 2910      00186         GOTO    T2I6
+               00187 
+               00188         ; HALF FREQUENCY?
+010B 1D5D      00189         BTFSS   MORE_FLAGS,ALARM_TONE
+010C 2910      00190         GOTO    T2I6
+010D 1CDD      00191         BTFSS   MORE_FLAGS,TONE_TOG
+010E 2910      00192         GOTO    T2I6
+               00193 
+               00194         ; DON'T TOGGLE BUZZER
+010F 2917      00195         GOTO    T2I4
+               00196         ;
+               00197 
+0110 00198 T2I6
+               00199 
+0110 1FD0      00200         BTFSS   TICKS,TICKS_BUZZER
+0111 2915      00201         GOTO    T2I3
+               00202         BUZZER_OFF
+                   M         IF SYSTEM_VERSION == PROTOTYPE_2
+                   M                 BSF     PORTB,BUZZER
+                   M         ELSE
+0112 1006          M                 BCF     PORTB,BUZZER
+                   M         ENDIF
+0113 13D0      00203         BCF             TICKS,TICKS_BUZZER
+0114 2917      00204         GOTO    T2I4
+0115 00205 T2I3
+               00206         BUZZER_ON
+                   M         IF SYSTEM_VERSION == PROTOTYPE_2
+                   M                 BCF     PORTB,BUZZER
+                   M         ELSE
+0115 1406          M                 BSF     PORTB,BUZZER
+                   M         ENDIF
+0116 17D0      00207         BSF             TICKS,TICKS_BUZZER
+               00208 
+0117 00209 T2I4
+               00210         
+0117 0008      00211         RETURN
+               00038         include "display.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 20
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+0118 00017 UPDATE_DISPLAY
+               00018 
+               00019         ; SWITCH MODE
+               00020         CASE MODE,MODE_CD
+0118 3000          M         MOVLW   STATE
+0119 0247          M         SUBWF   REG,W
+011A 1903          M         BTFSC   STATUS,Z
+011B 215C      00021         CALL    CD_DISPLAY
+               00022 
+               00023         CASE MODE,MODE_TM
+011C 3001          M         MOVLW   STATE
+011D 0247          M         SUBWF   REG,W
+011E 1903          M         BTFSC   STATUS,Z
+011F 219B      00024         CALL    TM_DISPLAY
+               00025 
+               00026         CASE MODE,MODE_AL
+0120 3002          M         MOVLW   STATE
+0121 0247          M         SUBWF   REG,W
+0122 1903          M         BTFSC   STATUS,Z
+0123 21FF      00027         CALL    AL_DISPLAY
+               00028 
+0124 0008      00029         RETURN
+               00030 
+               00031 
+               00032 ; DISPLAY THE DECIMAL DIGIT IN 'W'
+               00033 ; AT POSITION 'INT_CURSOR'
+0125 00034 SHOW_DIGIT
+0125 00CC      00035         MOVWF   D_NUM
+               00036         MOVLF   D_DIV,D'10'
+0126 300A          M         MOVLW VAL
+0127 00CD          M         MOVWF REG
+0128 209D      00037         CALL    DIV
+               00038 
+               00039         MOVFF   FSR,INT_CURSOR
+0129 0854          M         MOVFW   REG2
+012A 0084          M         MOVWF   REG1
+               00040         MOVFF   INDF,D_MOD
+012B 084B          M         MOVFW   REG2
+012C 0080          M         MOVWF   REG1
+012D 0A84      00041         INCF    FSR,F
+               00042         MOVFF   INDF,D_NUM
+012E 084C          M         MOVFW   REG2
+012F 0080          M         MOVWF   REG1
+0130 0008      00043         RETURN
+               00044 
+               00045 
+               00046 ; HOURS
+0131 00047 CD_SHOW_HOUR
+               00048 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 21
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0131 08B2      00049         MOVF    HOUR,F
+0132 1D03      00050         BTFSS   STATUS,Z
+0133 2935      00051         GOTO    CD_SHO1
+0134 0008      00052         RETURN
+0135 00053 CD_SHO1
+               00054         DISPLAY HOUR,DIG1
+                   M         MOVLF   INT_CURSOR,POS
+0135 3020          M         MOVLW VAL
+0136 00D4          M         MOVWF REG
+0137 0832          M         MOVFW   VALUE
+0138 2125          M         CALL    SHOW_DIGIT
+0139 0008      00055         RETURN
+               00056 
+               00057 ; MINUTES
+013A 00058 CD_SHOW_MIN
+               00059 
+013A 08B2      00060         MOVF    HOUR,F
+013B 1D03      00061         BTFSS   STATUS,Z
+013C 2942      00062         GOTO    CD_SM1
+               00063         DISPLAY MIN,DIG1
+                   M         MOVLF   INT_CURSOR,POS
+013D 3020          M         MOVLW VAL
+013E 00D4          M         MOVWF REG
+013F 0833          M         MOVFW   VALUE
+0140 2125          M         CALL    SHOW_DIGIT
+0141 0008      00064         RETURN
+0142 00065 CD_SM1
+               00066         DISPLAY MIN,DIG3
+                   M         MOVLF   INT_CURSOR,POS
+0142 3022          M         MOVLW VAL
+0143 00D4          M         MOVWF REG
+0144 0833          M         MOVFW   VALUE
+0145 2125          M         CALL    SHOW_DIGIT
+0146 0008      00067         RETURN
+               00068 
+               00069 ; SECONDS
+0147 00070 CD_SHOW_SEC
+               00071 
+0147 08B2      00072         MOVF    HOUR,F
+0148 1D03      00073         BTFSS   STATUS,Z
+0149 294F      00074         GOTO    CD_SS1
+               00075         DISPLAY SEC,DIG3
+                   M         MOVLF   INT_CURSOR,POS
+014A 3022          M         MOVLW VAL
+014B 00D4          M         MOVWF REG
+014C 0834          M         MOVFW   VALUE
+014D 2125          M         CALL    SHOW_DIGIT
+014E 0008      00076         RETURN
+014F 00077 CD_SS1
+               00078         DISPLAY SEC,DIG5
+                   M         MOVLF   INT_CURSOR,POS
+014F 3024          M         MOVLW VAL
+0150 00D4          M         MOVWF REG
+0151 0834          M         MOVFW   VALUE
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 22
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0152 2125          M         CALL    SHOW_DIGIT
+0153 0008      00079         RETURN
+               00080 
+               00081 ; HUNDREDS
+0154 00082 CD_SHOW_HUN
+0154 08B2      00083         MOVF    HOUR,F
+0155 1D03      00084         BTFSS   STATUS,Z
+0156 295B      00085         GOTO    CD_SH1
+               00086         DISPLAY HUN,DIG5
+                   M         MOVLF   INT_CURSOR,POS
+0157 3024          M         MOVLW VAL
+0158 00D4          M         MOVWF REG
+0159 0835          M         MOVFW   VALUE
+015A 2125          M         CALL    SHOW_DIGIT
+015B 00087 CD_SH1
+015B 0008      00088         RETURN
+               00089 
+               00090 ; display the entire countdown display
+015C 00091 CD_DISPLAY
+               00092 
+               00093 
+015C 1B5D      00094         BTFSC   MORE_FLAGS,FREEZE
+015D 2A36      00095         GOTO    FREEZE_COLONS;CD_COLONS ;RETURN ADDRESS ALREADY ON STACK
+               00096 
+               00097         CASE CD_MODE,CD_PAUSED
+015E 3000          M         MOVLW   STATE
+015F 0248          M         SUBWF   REG,W
+0160 1903          M         BTFSC   STATUS,Z
+0161 2970      00098         GOTO    CD_D2
+               00099 
+               00100         CASE CD_MODE,CD_RUNNING
+0162 3001          M         MOVLW   STATE
+0163 0248          M         SUBWF   REG,W
+0164 1903          M         BTFSC   STATUS,Z
+0165 296A      00101         GOTO    CD_D3
+               00102 
+0166 0008      00103         RETURN
+               00104 
+0167 00105 CD_D5
+0167 300B      00106         MOVLW   COLONS
+0168 00A6      00107         MOVWF   DIG7
+0169 296B      00108         GOTO    CD_D4
+               00109 
+016A 00110 CD_D3
+016A 2185      00111         CALL    CD_COLONS
+               00112 
+016B 00113 CD_D4
+               00114 
+016B 2131      00115         CALL    CD_SHOW_HOUR
+016C 213A      00116         CALL    CD_SHOW_MIN
+016D 2147      00117         CALL    CD_SHOW_SEC
+016E 2154      00118         CALL    CD_SHOW_HUN
+               00119 
+016F 0008      00120         RETURN
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 23
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00121 
+0170 00122 CD_D2
+               00123 
+               00124         ; COLONS ON STEADY
+0170 300B      00125         MOVLW   COLONS
+0171 00A6      00126         MOVWF   DIG7
+               00127 
+               00128         ; IF COUNTDOWN ALARM IS SOUNDING THEN FLASH DISPLAY
+0172 1DD0      00129         BTFSS   TICKS,CD_ALARM_ON
+0173 0008      00130         RETURN
+               00131 
+0174 1AD0      00132         BTFSC   TICKS,BUZZER_PHASE
+0175 296B      00133         GOTO    CD_D4
+               00134 
+0176 18D0      00135         BTFSC   TICKS,TICKS_HSECOND
+0177 296B      00136         GOTO    CD_D4
+               00137 
+               00138         MOVLF   DIG1,BLANK
+0178 300A          M         MOVLW VAL
+0179 00A0          M         MOVWF REG
+               00139         MOVLF   DIG2,BLANK
+017A 300A          M         MOVLW VAL
+017B 00A1          M         MOVWF REG
+               00140         MOVLF   DIG3,BLANK
+017C 300A          M         MOVLW VAL
+017D 00A2          M         MOVWF REG
+               00141         MOVLF   DIG4,BLANK
+017E 300A          M         MOVLW VAL
+017F 00A3          M         MOVWF REG
+               00142         MOVLF   DIG5,BLANK
+0180 300A          M         MOVLW VAL
+0181 00A4          M         MOVWF REG
+               00143         MOVLF   DIG6,BLANK
+0182 300A          M         MOVLW VAL
+0183 00A5          M         MOVWF REG
+               00144 
+0184 0008      00145         RETURN
+               00146 
+0185 00147 CD_COLONS
+               00148         ; KEEP COLONS IN PHASE WITH COUNT
+               00149         ; IF HUN IS >= 50 THEN COLONS ON
+               00150 
+               00151         ; COLONS ARE 180 DEGREES OUT OF PHASE IN COUNT UP MODE
+               00152 
+0185 1E5D      00153         BTFSS   MORE_FLAGS,UP_DOWN
+0186 2991      00154         GOTO    CD_D7
+               00155 
+               00156 ; COLON CONTROL FOR COUNT DOWN
+0187 3032      00157         MOVLW   D'50'
+0188 0235      00158         SUBWF   HUN,W
+0189 1C03      00159         BTFSS   STATUS,C
+018A 298E      00160         GOTO    CD_D6
+               00161 
+018B 300B      00162         MOVLW   COLONS
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 24
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+018C 00A6      00163         MOVWF   DIG7
+018D 299A      00164         GOTO    CD_C1
+               00165 
+018E 00166 CD_D6
+018E 300A      00167         MOVLW   BLANK
+018F 00A6      00168         MOVWF   DIG7
+0190 299A      00169         GOTO    CD_C1
+               00170 
+               00171 ; COLON CONTROL FOR COUNT UP
+0191 00172 CD_D7
+0191 3032      00173         MOVLW   D'50'
+0192 0235      00174         SUBWF   HUN,W
+0193 1C03      00175         BTFSS   STATUS,C
+0194 2998      00176         GOTO    CD_D8
+               00177 
+0195 300A      00178         MOVLW   BLANK
+0196 00A6      00179         MOVWF   DIG7
+0197 299A      00180         GOTO    CD_C1
+               00181 
+0198 00182 CD_D8
+0198 300B      00183         MOVLW   COLONS
+0199 00A6      00184         MOVWF   DIG7
+               00185 
+019A 00186 CD_C1
+               00187 
+019A 0008      00188         RETURN
+               00189         
+               00190 
+019B 00191 TM_DISPLAY
+               00192 
+               00193         CASE    TM_MODE,TM_SET
+019B 3001          M         MOVLW   STATE
+019C 0249          M         SUBWF   REG,W
+019D 1903          M         BTFSC   STATUS,Z
+019E 29F7      00194         GOTO    TM_D1
+               00195 
+               00196         ; UN-FREEZE DISPLAY IF 12-H MODE (FREEZE DOESN'T REALLY MAKE SENSE IN THIS MODE)
+019F 1EDD      00197         BTFSS   MORE_FLAGS,MIL_MODE
+01A0 135D      00198         BCF             MORE_FLAGS,FREEZE
+               00199 
+               00200         ; TIME FREEZE MODE
+01A1 1B5D      00201         BTFSC   MORE_FLAGS,FREEZE
+               00202         ;RETURN
+01A2 2A36      00203         GOTO    FREEZE_COLONS
+               00204 
+               00205         ; COLONS
+01A3 301A      00206         MOVLW   COLON_12H
+01A4 1ADD      00207         BTFSC   MORE_FLAGS,MIL_MODE
+01A5 300B      00208         MOVLW   COLONS
+               00209 
+01A6 18D0      00210         BTFSC   TICKS,TICKS_HSECOND
+01A7 300A      00211         MOVLW   BLANK
+01A8 00A6      00212         MOVWF   DIG7
+               00213 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 25
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00214 
+               00215         ; SNOOZE INDICATOR
+01A9 08DC      00216         MOVF    SNOOZE_MINS,F
+01AA 1903      00217         BTFSC   STATUS,Z
+01AB 29BB      00218         GOTO    TM_D2
+               00219 
+01AC 18B8      00220         BTFSC   C_SEC,1
+01AD 29BB      00221         GOTO    TM_D2
+               00222 
+               00223         ; DISPLAY 'SNOOZE'
+               00224         MOVLF   DIG1,D'5'    ; 5
+01AE 3005          M         MOVLW VAL
+01AF 00A0          M         MOVWF REG
+               00225         MOVLF   DIG2,LETTER_N; N
+01B0 3016          M         MOVLW VAL
+01B1 00A1          M         MOVWF REG
+               00226         MOVLF   DIG3,D'0'    ; 0
+01B2 3000          M         MOVLW VAL
+01B3 00A2          M         MOVWF REG
+               00227         MOVLF   DIG4,D'0'    ; 0
+01B4 3000          M         MOVLW VAL
+01B5 00A3          M         MOVWF REG
+               00228         MOVLF   DIG5,D'2'    ; 2
+01B6 3002          M         MOVLW VAL
+01B7 00A4          M         MOVWF REG
+               00229         MOVLF   DIG6,LETTER_E; E
+01B8 3012          M         MOVLW VAL
+01B9 00A5          M         MOVWF REG
+               00230 
+01BA 0008      00231         RETURN  
+               00232 
+01BB 00233 TM_D2
+               00234 
+               00235         ; MINS
+               00236         MOVFF   D_NUM,C_MIN
+01BB 0837          M         MOVFW   REG2
+01BC 00CC          M         MOVWF   REG1
+               00237         MOVLF   D_DIV,D'10'
+01BD 300A          M         MOVLW VAL
+01BE 00CD          M         MOVWF REG
+01BF 209D      00238         CALL    DIV
+               00239         MOVFF   DIG3,D_MOD
+01C0 084B          M         MOVFW   REG2
+01C1 00A2          M         MOVWF   REG1
+               00240         MOVFF   DIG4,D_NUM
+01C2 084C          M         MOVFW   REG2
+01C3 00A3          M         MOVWF   REG1
+               00241 
+01C4 1ADD      00242         BTFSC   MORE_FLAGS,MIL_MODE
+01C5 29E4      00243         GOTO    TM_D3
+               00244 
+               00245         ; 12 HOUR DISPLAY
+               00246 
+               00247         ; IF HOURS > 12 THEN DISPLAY HOURS-12
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 26
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+01C6 300C      00248         MOVLW   D'12'
+01C7 0236      00249         SUBWF   C_HOUR,W
+01C8 1803      00250         BTFSC   STATUS,C
+01C9 29CB      00251         GOTO    TM_D4
+01CA 0836      00252         MOVFW   C_HOUR
+               00253 
+01CB 00254 TM_D4
+               00255 
+               00256         ; CATCH 24 O'CLOCK (12 AM)
+01CB 39FF      00257         ANDLW   0XFF 
+01CC 1903      00258         BTFSC   STATUS,Z
+01CD 300C      00259         MOVLW   D'12'
+               00260 
+01CE 00CC      00261         MOVWF   D_NUM
+               00262         MOVLF   D_DIV,D'10'
+01CF 300A          M         MOVLW VAL
+01D0 00CD          M         MOVWF REG
+01D1 209D      00263         CALL    DIV
+01D2 084B      00264         MOVFW   D_MOD
+               00265 
+               00266         ; SUPPRESS LEADING ZERO
+01D3 1903      00267         BTFSC   STATUS,Z
+01D4 300A      00268         MOVLW   BLANK
+               00269         
+01D5 00A0      00270         MOVWF   DIG1
+               00271         MOVFF   DIG2,D_NUM
+01D6 084C          M         MOVFW   REG2
+01D7 00A1          M         MOVWF   REG1
+               00272 
+               00273         MOVLF   DIG5,BLANK
+01D8 300A          M         MOVLW VAL
+01D9 00A4          M         MOVWF REG
+               00274 
+               00275         ; DISPLAY AM OR PM
+01DA 0836      00276         MOVFW   C_HOUR 
+01DB 3C0B      00277         SUBLW   D'11'
+01DC 1C03      00278         BTFSS   STATUS,C
+01DD 29E1      00279         GOTO    TM_D5
+               00280         MOVLF   DIG6,LETTER_A
+01DE 3014          M         MOVLW VAL
+01DF 00A5          M         MOVWF REG
+01E0 0008      00281         RETURN
+01E1 00282 TM_D5
+               00283         MOVLF   DIG6,LETTER_P
+01E1 3017          M         MOVLW VAL
+01E2 00A5          M         MOVWF REG
+01E3 0008      00284         RETURN
+               00285 
+               00286 
+               00287 ; 24 HOUR DISPLAY
+01E4 00288 TM_D3
+               00289         ; HOURS
+               00290         MOVFF   D_NUM,C_HOUR
+01E4 0836          M         MOVFW   REG2
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 27
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+01E5 00CC          M         MOVWF   REG1
+               00291         MOVLF   D_DIV,D'10'
+01E6 300A          M         MOVLW VAL
+01E7 00CD          M         MOVWF REG
+01E8 209D      00292         CALL    DIV
+               00293         MOVFF   DIG1,D_MOD
+01E9 084B          M         MOVFW   REG2
+01EA 00A0          M         MOVWF   REG1
+               00294         MOVFF   DIG2,D_NUM
+01EB 084C          M         MOVFW   REG2
+01EC 00A1          M         MOVWF   REG1
+               00295 
+               00296         ; SECS
+               00297         MOVFF   D_NUM,C_SEC
+01ED 0838          M         MOVFW   REG2
+01EE 00CC          M         MOVWF   REG1
+               00298         MOVLF   D_DIV,D'10'
+01EF 300A          M         MOVLW VAL
+01F0 00CD          M         MOVWF REG
+01F1 209D      00299         CALL    DIV
+               00300         MOVFF   DIG5,D_MOD
+01F2 084B          M         MOVFW   REG2
+01F3 00A4          M         MOVWF   REG1
+               00301         MOVFF   DIG6,D_NUM
+01F4 084C          M         MOVFW   REG2
+01F5 00A5          M         MOVWF   REG1
+01F6 0008      00302         RETURN
+               00303 
+               00304 
+01F7 00305 TM_D1
+               00306         ;FLASH CURRENT CURSOR POSITION
+               00307 
+               00308         ; CALCULATE ADDRESS IN DISPLAY MEMORY
+01F7 084E      00309         MOVFW   CURSOR
+01F8 3E20      00310         ADDLW   DIG1
+01F9 0084      00311         MOVWF   FSR
+               00312 
+01FA 300E      00313         MOVLW   UNDERSCORE
+01FB 1CD0      00314         BTFSS   TICKS,TICKS_HSECOND
+01FC 300A      00315         MOVLW   BLANK
+               00316 
+01FD 0080      00317         MOVWF   INDF
+               00318 
+01FE 0008      00319         RETURN
+               00320 
+               00321 
+01FF 00322 AL_DISPLAY
+               00323 
+               00324         CASE AL_MODE,AL_VER
+01FF 3002          M         MOVLW   STATE
+0200 024A          M         SUBWF   REG,W
+0201 1903          M         BTFSC   STATUS,Z
+0202 2A23      00325         GOTO    AL_D1; SHOWING VERSION NUMBER
+               00326 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 28
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00327 
+               00328         ; COLONS ON STEADY
+0203 3013      00329         MOVLW   SET_COLON
+0204 00A6      00330         MOVWF   DIG7
+               00331 
+               00332         MOVLF   DIG1,LETTER_A
+0205 3014          M         MOVLW VAL
+0206 00A0          M         MOVWF REG
+               00333         MOVLF   DIG2,LETTER_L
+0207 3015          M         MOVLW VAL
+0208 00A1          M         MOVWF REG
+               00334 
+               00335         CASE AL_MODE,AL_SET
+0209 3001          M         MOVLW   STATE
+020A 024A          M         SUBWF   REG,W
+020B 1903          M         BTFSC   STATUS,Z
+020C 29F7      00336         GOTO    TM_D1; REUSE CODE FOR TIME DISPLAY
+               00337 
+               00338         ; CHECK IF ALARM IS CANCELLED (INVALID ALARM VALUES)
+               00339         CASE    A_HOUR,0XFF
+020D 30FF          M         MOVLW   STATE
+020E 0239          M         SUBWF   REG,W
+020F 1903          M         BTFSC   STATUS,Z
+0210 2A24      00340         GOTO    AL_D2
+               00341 
+               00342         ; HOURS
+               00343         MOVFF   D_NUM,A_HOUR
+0211 0839          M         MOVFW   REG2
+0212 00CC          M         MOVWF   REG1
+               00344         MOVLF   D_DIV,D'10'
+0213 300A          M         MOVLW VAL
+0214 00CD          M         MOVWF REG
+0215 209D      00345         CALL    DIV
+               00346         MOVFF   DIG3,D_MOD
+0216 084B          M         MOVFW   REG2
+0217 00A2          M         MOVWF   REG1
+               00347         MOVFF   DIG4,D_NUM
+0218 084C          M         MOVFW   REG2
+0219 00A3          M         MOVWF   REG1
+               00348 
+               00349         ; MINS
+               00350         MOVFF   D_NUM,A_MIN
+021A 083A          M         MOVFW   REG2
+021B 00CC          M         MOVWF   REG1
+               00351         MOVLF   D_DIV,D'10'
+021C 300A          M         MOVLW VAL
+021D 00CD          M         MOVWF REG
+021E 209D      00352         CALL    DIV
+               00353         MOVFF   DIG5,D_MOD
+021F 084B          M         MOVFW   REG2
+0220 00A4          M         MOVWF   REG1
+               00354         MOVFF   DIG6,D_NUM
+0221 084C          M         MOVFW   REG2
+0222 00A5          M         MOVWF   REG1
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 29
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00355 
+0223 00356 AL_D1
+0223 0008      00357         RETURN
+               00358 
+               00359 
+0224 00360 AL_D2
+               00361         MOVLF   DIG3,DASH
+0224 300D          M         MOVLW VAL
+0225 00A2          M         MOVWF REG
+               00362         MOVLF   DIG4,DASH
+0226 300D          M         MOVLW VAL
+0227 00A3          M         MOVWF REG
+               00363         MOVLF   DIG5,DASH
+0228 300D          M         MOVLW VAL
+0229 00A4          M         MOVWF REG
+               00364         MOVLF   DIG6,DASH
+022A 300D          M         MOVLW VAL
+022B 00A5          M         MOVWF REG
+022C 0008      00365         RETURN
+               00366 
+               00367 
+               00368 ; PUT CURRENT KEY ON DISPLAY AT CURSOR POSITION
+022D 00369 ACCEPT_KEY
+022D 084E      00370         MOVFW   CURSOR
+022E 3E20      00371         ADDLW   DIG1
+022F 0084      00372         MOVWF   FSR
+               00373 
+0230 0851      00374         MOVFW   IN_KEY
+0231 0080      00375         MOVWF   INDF
+               00376         
+               00377         ; MOVE CURSOR
+0232 0ACE      00378         INCF CURSOR,F
+0233 3006      00379         MOVLW D'6'
+0234 024E      00380         SUBWF CURSOR,W
+               00381 
+0235 0008      00382         RETURN
+               00383 
+               00384 ; display freeze mode colons
+               00385 ; sync with main 500ms ticks (phase isn't really important when display is static)
+0236 00386 FREEZE_COLONS
+               00387 
+0236 301B      00388         MOVLW   COLON_TOP
+0237 1CD0      00389         BTFSS   TICKS,TICKS_HSECOND
+0238 301C      00390         MOVLW   COLON_BOT
+               00391 
+0239 00A6      00392         MOVWF   DIG7
+023A 0008      00393         RETURN
+               00394 
+               00039         include "keyboard.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 30
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 
+023B 00018 SCAN_KEYBOARD
+               00019 
+               00020         ; COPY ROW VALUE
+023B 0806      00021         MOVFW   PORTB
+023C 00BE      00022         MOVWF   ICOUNTER
+               00023 
+023D 01BD      00024         CLRF    ITEMP1
+023E 1FBE      00025         BTFSS   ICOUNTER,KB_ROW1
+023F 0ABD      00026         INCF    ITEMP1,F
+               00027 
+0240 1F3E      00028         BTFSS   ICOUNTER,KB_ROW2
+0241 0ABD      00029         INCF    ITEMP1,F
+               00030 
+0242 1EBE      00031         BTFSS   ICOUNTER,KB_ROW3
+0243 0ABD      00032         INCF    ITEMP1,F
+               00033 
+0244 1E3E      00034         BTFSS   ICOUNTER,KB_ROW4
+0245 0ABD      00035         INCF    ITEMP1,F
+               00036 
+               00037         ; DETECT NO KEY PRESSED
+               00038         ; DETECT MULTIPLE KEYS PRESSED
+0246 03BD      00039         DECF    ITEMP1,F
+0247 1D03      00040         BTFSS   STATUS,Z
+0248 2A64      00041         GOTO    SK2
+               00042 
+               00043         ; GET ROW VALUE
+               00044         ; ONLY ONE BIT IS SET NOW
+0249 1FBE      00045         BTFSS   ICOUNTER,KB_ROW1
+024A 3000      00046         MOVLW   0
+               00047 
+024B 1F3E      00048         BTFSS   ICOUNTER,KB_ROW2
+024C 3001      00049         MOVLW   1
+               00050 
+024D 1EBE      00051         BTFSS   ICOUNTER,KB_ROW3
+024E 3002      00052         MOVLW   2
+               00053 
+024F 1E3E      00054         BTFSS   ICOUNTER,KB_ROW4
+0250 3003      00055         MOVLW   3
+               00056 
+               00057         ; W NOW CONTAINS THE ROW NUMBER 0-3
+0251 00BD      00058         MOVWF   ITEMP1
+               00059 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 31
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0252 0843      00060         MOVFW   KEY_COL
+0253 00BE      00061         MOVWF   ICOUNTER
+0254 0DBE      00062         RLF             ICOUNTER,F
+0255 0DBE      00063         RLF             ICOUNTER,F
+0256 083E      00064         MOVFW   ICOUNTER
+0257 390C      00065         ANDLW   0X0C
+0258 043D      00066         IORWF   ITEMP1,W
+               00067 
+               00068         ; NOW LOOK UP THE KEY VALUE
+0259 2063      00069         CALL    KEY_MAPPING
+               00070         
+               00071         ; IF WE'VE ALREADY SEEN A KEY ON THIS PASS, REGISTER NO KEYS PRESSED
+               00072         ; AND START SCANNING AGAIN
+025A 1BC5      00073         BTFSC   TEMP_KEY,7
+025B 2A63      00074         GOTO    SK4
+               00075 
+               00076         MOVLF   TEMP_KEY,0XFF
+025C 30FF          M         MOVLW VAL
+025D 00C5          M         MOVWF REG
+               00077         MOVLF   CURRENT_KEY,0XFF
+025E 30FF          M         MOVLW VAL
+025F 00C4          M         MOVWF REG
+               00078         MOVLF   KEY_COL,0X02
+0260 3002          M         MOVLW VAL
+0261 00C3          M         MOVWF REG
+               00079 
+0262 2A64      00080         GOTO SK2
+               00081 
+0263 00082 SK4
+0263 00C5      00083         MOVWF   TEMP_KEY
+0264 00084 SK2
+               00085 
+               00086         ; SELECT NEXT COLUMN
+0264 1586      00087         BSF             PORTB,KB_COL1
+0265 1506      00088         BSF             PORTB,KB_COL2
+0266 1486      00089         BSF             PORTB,KB_COL3
+               00090 
+0267 0AC3      00091         INCF    KEY_COL,F
+0268 0843      00092         MOVFW   KEY_COL
+0269 3C03      00093         SUBLW   0X03
+026A 1D03      00094         BTFSS   STATUS,Z
+026B 2A71      00095         GOTO    SK3
+               00096 
+               00097         ; END OF PASS, UPDATE GLOBAL KEY VARIABLE IF KEY REGISTERED
+026C 0845      00098         MOVFW   TEMP_KEY
+026D 00C4      00099         MOVWF   CURRENT_KEY
+026E 01C3      00100         CLRF    KEY_COL
+               00101         MOVLF   TEMP_KEY,0XFF
+026F 30FF          M         MOVLW VAL
+0270 00C5          M         MOVWF REG
+               00102 
+0271 00103 SK3
+               00104 
+               00105         ; ENERGISE CURRENT COLUMN
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 32
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0271 0843      00106         MOVFW   KEY_COL
+0272 1903      00107         BTFSC   STATUS,Z
+0273 1186      00108         BCF             PORTB,KB_COL1
+               00109         
+0274 1843      00110         BTFSC   KEY_COL,0
+0275 1106      00111         BCF             PORTB,KB_COL2
+               00112         
+0276 18C3      00113         BTFSC   KEY_COL,1
+0277 1086      00114         BCF             PORTB,KB_COL3   
+               00115 
+0278 0008      00116         RETURN
+               00117 
+               00118 
+               00119 ; CHECK DIGIT AT CURSOR POSITION IS IN THE VALID RANGE
+               00120 ; FOR TIME AND ALARM SETTING
+0279 00121 SET_DIGIT
+               00122 
+               00123         CASE    CURSOR,0X03
+0279 3003          M         MOVLW   STATE
+027A 024E          M         SUBWF   REG,W
+027B 1903          M         BTFSC   STATUS,Z
+027C 2A80      00124         GOTO    SD1
+               00125         
+027D 084E      00126         MOVFW   CURSOR
+027E 208F      00127         CALL    TIME_LIMITS
+               00128 
+027F 2A87      00129         GOTO SD2
+               00130 
+0280 00131 SD1
+               00132         ; VALIDATE HOUR UNITS DEPENDING ON HOUR TENS
+               00133         ; GET HOUR VALUE
+0280 3022      00134         MOVLW   DIG3
+0281 0084      00135         MOVWF   FSR
+               00136 
+0282 300A      00137         MOVLW   0X0A
+               00138         CASE    INDF,2
+0283 3002          M         MOVLW   STATE
+0284 0200          M         SUBWF   REG,W
+0285 1903          M         BTFSC   STATUS,Z
+0286 3004      00139         MOVLW   0X04
+               00140 
+0287 00141 SD2
+               00142 
+0287 0251      00143         SUBWF   IN_KEY,W
+0288 1803      00144         BTFSC   STATUS,C
+0289 2A8C      00145         GOTO    SD3
+               00146         
+028A 222D      00147         CALL ACCEPT_KEY
+028B 0008      00148         RETURN
+               00149 
+028C 00150 SD3     ; INVALID CHARACTER
+028C 30FF      00151         MOVLW 0XFF
+028D 0008      00152         RETURN
+               00040         include "multiplexer.asm"
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 33
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 ; MULTIPLEXER INTERRUPT (100Hz)
+028E 00018 MPX_INTERRUPT
+               00019 
+               00020         ; DECREMENT 10ms TICK COUNTER
+               00021         ; (NOT STRICTLY PART OF THE MULTIPLEXER!)
+028E 03BF      00022         DECF    SUBTICKS,F
+028F 1903      00023         BTFSC   STATUS,Z
+0290 20C8      00024         CALL    ITICKS ; ITICKS IS IN INTERRUPTS.ASM
+               00025 
+               00026         ; CLEAR BRIGHTNESS PWM COUNTER
+0291 3009      00027         MOVLW   0X09
+0292 0256      00028         SUBWF   FRAME_COUNT,W
+0293 1903      00029         BTFSC   STATUS,Z
+0294 01D6      00030         CLRF    FRAME_COUNT
+               00031 
+               00032         ; CHECK FOR LOW POWER MODE
+               00033         CASE    LP_MODE,1
+0295 3001          M         MOVLW   STATE
+0296 025E          M         SUBWF   REG,W
+0297 1903          M         BTFSC   STATUS,Z
+0298 2AC7      00034         GOTO    LOW_POWER_MODE
+               00035 
+               00036         ; EXTINGUISH DISPLAY
+0299 1787      00037         BSF             PORTC,DIGIT7
+               00038         MOVLF   PORTA,0xFF
+029A 30FF          M         MOVLW VAL
+029B 0085          M         MOVWF REG
+               00039 
+               00040         ; SELECT NEXT DIGIT (unless we're giving this digit some extra juice)
+029C 03DF      00041         DECF    MPX_CYCLES,F
+029D 1D03      00042         BTFSS   STATUS,Z
+029E 2AA1      00043         GOTO MPX_I7     
+               00044 
+029F 0ABB      00045         INCF    MPX_DIGIT,F
+               00046         ; CONTROL DISPLAY BRIGHTNESS
+02A0 0AD6      00047         INCF    FRAME_COUNT,F
+               00048 
+02A1 00049 MPX_I7
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 34
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00050 
+               00051 ; SELECT BIT PATTERN FROM DISPLAY MEMORY
+02A1 083B      00052         MOVFW   MPX_DIGIT
+02A2 3E20      00053         ADDLW   DIG1
+02A3 0084      00054         MOVWF   FSR
+02A4 0800      00055         MOVFW   INDF
+02A5 2070      00056         CALL    PTRN    ; get bit pattern
+02A6 0087      00057         MOVWF   PORTC   ; update segment drive
+               00058 ;
+               00059 
+               00060 ; ENABLE CURRENT DIGIT
+               00061 
+               00062         ; set number of multiplexer cycles to hold this digit on for
+               00063         ; to boos brightness of 5th digit which has different drive electronics
+               00064         ; - fixing hardware with software :-S
+               00065 
+02A7 085F      00066         MOVFW MPX_CYCLES
+02A8 1D03      00067         BTFSS STATUS,Z
+02A9 2AB2      00068         GOTO    MPX_I0
+               00069 
+               00070         MOVLF MPX_CYCLES,0x01
+02AA 3001          M         MOVLW VAL
+02AB 00DF          M         MOVWF REG
+02AC 3004      00071         MOVLW 0x04
+02AD 023B      00072         SUBWF MPX_DIGIT,W
+               00073 
+02AE 1D03      00074         BTFSS   STATUS,Z
+02AF 2AB2      00075         GOTO    MPX_I0
+               00076 
+               00077         MOVLF MPX_CYCLES,0x02
+02B0 3002          M         MOVLW VAL
+02B1 00DF          M         MOVWF REG
+               00078 
+02B2 00079 MPX_I0
+02B2 3006      00080         MOVLW   0X06
+02B3 023B      00081         SUBWF   MPX_DIGIT,W
+               00082 
+02B4 1D03      00083         BTFSS   STATUS,Z
+02B5 2ABA      00084         GOTO    MPX_I1
+               00085 
+               00086 ; SELECT DIGIT 7 (PORT C)
+02B6 1387      00087         BCF     PORTC,DIGIT7
+               00088 ; MAKE NEXT INCREMENT EQUAL ZERO        
+               00089         MOVLF   MPX_DIGIT,0XFF
+02B7 30FF          M         MOVLW VAL
+02B8 00BB          M         MOVWF REG
+               00090 
+02B9 2ABE      00091         GOTO    MPX_I2
+               00092 
+               00093 ; SELECT DIGITS 1-6 (PORT A)
+02BA 00094 MPX_I1
+               00095 
+               00096         ; LOOK UP PORTA DIGIT SELECT VALUE FROM TABLE
+02BA 083B      00097         MOVFW   MPX_DIGIT
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 35
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+02BB 2096      00098         CALL    DIGIT_LOOKUP
+               00099 
+02BC 3AFF      00100         XORLW   0xFF
+02BD 0085      00101         MOVWF   PORTA
+               00102 
+02BE 00103 MPX_I2
+               00104 
+               00105         ; TURN THE DISPLAY OFF DEPENDING ON THE BRIGHTNESS
+               00106         ; CHECK VALUE IS < 10
+02BE 0855      00107         MOVFW   BRIGHTNESS
+02BF 0256      00108         SUBWF   FRAME_COUNT,W
+02C0 1803      00109         BTFSC   STATUS,C
+02C1 2AC5      00110         GOTO    MPX_I6
+               00111         ;FRAME_COUNT >= BRIGHTNESS
+               00112 
+               00113         ; EXTINGUISH DISPLAY
+02C2 1787      00114         BSF     PORTC,DIGIT7
+               00115         MOVLF   PORTA,0xFF
+02C3 30FF          M         MOVLW VAL
+02C4 0085          M         MOVWF REG
+               00116 
+02C5 00117 MPX_I6
+02C5 110B      00118         BCF             INTCON,T0IF
+02C6 0008      00119         RETURN
+               00120 
+02C7 00121 LOW_POWER_MODE
+               00122         
+               00123 ;FLASH A COLON LED EVERY 3 SECONDS      
+               00124 
+               00125 ; on strt D_DIV=divisor, D_NUM=numerator
+               00126         MOVLF   D_DIV,D'3'
+02C7 3003          M         MOVLW VAL
+02C8 00CD          M         MOVWF REG
+02C9 0838      00127         MOVFW   C_SEC
+02CA 00CC      00128         MOVWF   D_NUM
+02CB 209D      00129         CALL    DIV
+               00130 
+               00131 ; on exit D_MOD=modulus, D_NUM=remainder
+02CC 084C      00132         MOVFW   D_NUM
+02CD 1D03      00133         BTFSS   STATUS,Z
+02CE 2AE4      00134         GOTO    LPM1
+               00135 
+               00136 
+               00137         CASENOT ISECOND,D'1'
+02CF 3001          M         MOVLW   STATE
+02D0 0240          M         SUBWF   REG,W
+02D1 1D03          M         BTFSS   STATUS,Z
+02D2 2AE4      00138         GOTO    LPM1
+               00139 
+               00140         CASENOT IHSECOND,D'1'
+02D3 3001          M         MOVLW   STATE
+02D4 0241          M         SUBWF   REG,W
+02D5 1D03          M         BTFSS   STATUS,Z
+02D6 2AE4      00141         GOTO    LPM1
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 36
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00142 
+               00143         CASENOT ITSECOND,D'1'
+02D7 3001          M         MOVLW   STATE
+02D8 0242          M         SUBWF   REG,W
+02D9 1D03          M         BTFSS   STATUS,Z
+02DA 2AE4      00144         GOTO    LPM1
+               00145 
+               00146         ; MAKE THE LED DIMMER
+02DB 3030      00147         MOVLW   30
+02DC 0256      00148         SUBWF   FRAME_COUNT,W
+02DD 1803      00149         BTFSC   STATUS,C
+02DE 2AE4      00150         GOTO    LPM1
+               00151 
+               00152         ; light the standby LED
+               00153         MOVLF   PORTC,B'00111111'
+02DF 303F          M         MOVLW VAL
+02E0 0087          M         MOVWF REG
+               00154         MOVLF   PORTA,0xFF
+02E1 30FF          M         MOVLW VAL
+02E2 0085          M         MOVWF REG
+02E3 2AC5      00155         GOTO    MPX_I6
+               00156 
+02E4 00157 LPM1
+               00158         ; EXTINGUISH DISPLAY
+02E4 1787      00159         BSF             PORTC,DIGIT7
+               00160         MOVLF   PORTA,0xFF
+02E5 30FF          M         MOVLW VAL
+02E6 0085          M         MOVWF REG
+               00161 
+02E7 2AC5      00162         GOTO    MPX_I6
+               00163 
+               00164 
+               00165 
+               00166 
+               00167 
+               00168 
+               00169 
+               00170 
+               00171 
+               00172 
+               00173 
+               00041         include "delay.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 37
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 ; ~10uS delay ----------------------------------------------------------
+               00018 
+               00019 ; loop is ((20*TEMP1)+1) cycles (TEMP1>=1)
+               00020 
+               00021 ; clock is 1.024 ips (~1us)
+02E8 0000      00022 DLY10US:NOP
+02E9 0000      00023                 NOP
+02EA 0000      00024                 NOP
+02EB 0000      00025                 NOP
+02EC 0000      00026                 NOP
+02ED 0000      00027                 NOP
+02EE 0000      00028                 NOP
+02EF 0000      00029                 NOP
+02F0 0BA9      00030                 DECFSZ  PTEMP1,F
+02F1 2AE8      00031                 GOTO    DLY10US
+02F2 0008      00032                 RETURN
+               00033 ;---------------------------------------------------------------------
+               00034 
+               00035 ;***** PAUSE MACRO  - Delays for ((DLYF*20)+5) cycles (DLYF>=1) *****
+               00036 ; 5 cycle overhead on this routine
+               00037 
+               00038 ; clock is 1.024 ips
+               00039 
+               00040 PAUSE   MACRO   DLYF
+               00041                 MOVLW   DLYF
+               00042                 MOVWF   PTEMP1
+               00043                 CALL    DLY10US
+               00044                 ENDM
+               00045 
+               00046 ;***********************
+               00047 
+               00048 ; 10us * 255 * 196
+               00049 
+               00050 ;**** ~0.5s delay ******
+               00051 
+02F3 30C4      00052 P1SEC   MOVLW   D'196'
+02F4 00B0      00053                 MOVWF   PTEMP2
+               00054 
+02F5 00055 P1LOOP
+               00056                 PAUSE   D'255'
+02F5 30FF          M                 MOVLW   DLYF
+02F6 00A9          M                 MOVWF   PTEMP1
+02F7 22E8          M                 CALL    DLY10US
+               00057 
+02F8 0BB0      00058                 DECFSZ  PTEMP2,F
+02F9 2AF5      00059         GOTO    P1LOOP
+02FA 0008      00060                 RETURN
+               00061 
+               00042         include "clock.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 38
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+02FB 00017 TM_KEYPRESSED
+               00018 
+               00019         CASE    LP_MODE,0
+02FB 3000          M         MOVLW   STATE
+02FC 025E          M         SUBWF   REG,W
+02FD 1903          M         BTFSC   STATUS,Z
+02FE 2B02      00020         GOTO    TM_KP3
+               00021 
+               00022         ; MOMENTARILY LIGHT THE DISPLAY
+               00023         MOVLF   LP_MODE,2
+02FF 3002          M         MOVLW VAL
+0300 00DE          M         MOVWF REG
+0301 0008      00024         RETURN  
+               00025 
+0302 00026 TM_KP3
+               00027 
+               00028         CASE TM_MODE,TM_TIME
+0302 3000          M         MOVLW   STATE
+0303 0249          M         SUBWF   REG,W
+0304 1903          M         BTFSC   STATUS,Z
+0305 2B1E      00029         GOTO TM_KP2
+               00030 
+               00031         ; IF SET KEY PRESSED THEN CANCEL SETTING MODE
+0306 300E      00032         MOVLW   SET_KEY
+0307 0251      00033         SUBWF   IN_KEY,W
+0308 1D03      00034         BTFSS   STATUS,Z
+0309 2B0D      00035         GOTO    TM_KP1
+               00036 
+               00037         MOVLF   TM_MODE,TM_TIME
+030A 3000          M         MOVLW VAL
+030B 00C9          M         MOVWF REG
+030C 0008      00038         RETURN
+               00039         
+               00040 
+030D 00041 TM_KP1
+030D 2279      00042         CALL    SET_DIGIT
+               00043 
+               00044         ; IF 'W' IS ZERO, THEN WE'RE DONE
+030E 39FF      00045         ANDLW   0XFF
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 39
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+030F 1D03      00046         BTFSS   STATUS,Z
+0310 0008      00047         RETURN
+               00048 
+               00049         ; UPDATE TIME FROM DISPLAY
+0311 234D      00050         CALL COPY_TIME_DISPLAY
+               00051 
+               00052         ; restart tick counters to make sure first second is a full one
+               00053         MOVLF   SUBTICKS,SUBTICK_COUNT
+0312 3014          M         MOVLW VAL
+0313 00BF          M         MOVWF REG
+               00054         MOVLF   ITSECOND,TSECOND_COUNT
+0314 300A          M         MOVLW VAL
+0315 00C2          M         MOVWF REG
+               00055         MOVLF   IHSECOND,HSECOND_COUNT
+0316 3005          M         MOVLW VAL
+0317 00C1          M         MOVWF REG
+               00056         MOVLF   ISECOND,SECOUND_COUNT
+0318 3002          M         MOVLW VAL
+0319 00C0          M         MOVWF REG
+031A 10D0      00057         BCF             TICKS,TICKS_HSECOND
+               00058 
+               00059         ; BACK TO TIME MODE
+               00060         MOVLF TM_MODE,TM_TIME
+031B 3000          M         MOVLW VAL
+031C 00C9          M         MOVWF REG
+031D 0008      00061         RETURN
+               00062 
+031E 00063 TM_KP2
+               00064 
+               00065         ; SET THE DISPLAY BRIGHTNESS (3 LEVELS)
+               00066         CASE IN_KEY,D'1'
+031E 3001          M         MOVLW   STATE
+031F 0251          M         SUBWF   REG,W
+0320 1903          M         BTFSC   STATUS,Z
+0321 2B2F      00067         GOTO    SET_BRIGHTNESS_1
+               00068 
+               00069         CASE IN_KEY,D'2'
+0322 3002          M         MOVLW   STATE
+0323 0251          M         SUBWF   REG,W
+0324 1903          M         BTFSC   STATUS,Z
+0325 2B32      00070         GOTO    SET_BRIGHTNESS_2
+               00071 
+               00072         CASE IN_KEY,D'3'
+0326 3003          M         MOVLW   STATE
+0327 0251          M         SUBWF   REG,W
+0328 1903          M         BTFSC   STATUS,Z
+0329 2B35      00073         GOTO    SET_BRIGHTNESS_3
+               00074 
+               00075 IFDEF RALLY
+               00076         ; TOGGLE TIME FREEZE (LAP) MODE
+               00077         CASE IN_KEY,D'5'
+032A 3005          M         MOVLW   STATE
+032B 0251          M         SUBWF   REG,W
+032C 1903          M         BTFSC   STATUS,Z
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 40
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+032D 2B38      00078         GOTO    FREEZE_CLOCK
+               00079 ENDIF
+               00080 
+032E 0008      00081         RETURN
+               00082 
+               00083 ;       ; CHECK VALUE IS < 10
+               00084 ;       MOVLW   D'10'
+               00085 ;       SUBWF   IN_KEY,W
+               00086 ;       BTFSC   STATUS,C
+               00087 ;       RETURN
+               00088 
+               00089 ;       ; SET THE DISPLAY BRIGHTNESS
+               00090 ;       MOVLF   TEMP1,0X09      
+               00091 ;       MOVFW   IN_KEY
+               00092 ;       SUBWF   TEMP1,W
+               00093 ;       MOVWF   BRIGHTNESS ; BRIGHTNESS = 0 - 9
+               00094 ;       RETURN
+               00095 
+032F 00096 SET_BRIGHTNESS_1
+               00097         MOVLF   BRIGHTNESS,D'10'
+032F 300A          M         MOVLW VAL
+0330 00D5          M         MOVWF REG
+0331 0008      00098         RETURN
+               00099 
+0332 00100 SET_BRIGHTNESS_2
+               00101         MOVLF   BRIGHTNESS,D'5'
+0332 3005          M         MOVLW VAL
+0333 00D5          M         MOVWF REG
+0334 0008      00102         RETURN
+               00103 
+0335 00104 SET_BRIGHTNESS_3
+               00105         MOVLF   BRIGHTNESS,D'0'
+0335 3000          M         MOVLW VAL
+0336 00D5          M         MOVWF REG
+0337 0008      00106         RETURN
+               00107 
+0338 00108 FREEZE_CLOCK
+0338 08DC      00109         MOVF    SNOOZE_MINS,F; DON'T ALLOW FREEZE DURING SNOOZE
+0339 1D03      00110         BTFSS   STATUS,Z
+033A 0008      00111         RETURN
+               00112         TOGGLEBIT MORE_FLAGS,FREEZE
+033B 01B1          M         CLRF    TEMP1
+033C 1731          M         BSF             TEMP1,BIT
+033D 0831          M         MOVFW   TEMP1
+033E 06DD          M         XORWF   REG,F   
+033F 0008      00113         RETURN
+               00114 
+               00115 ; COPY DECIMAL VALUE OF PAIRS OF DIGITS IN DISPLAY MEMORY TO 'W'
+               00116 ; ON ENTRY 'W' EQUALS THE CURSOR POSITION TO READ FROM
+0340 00117 COPY_DIGIT
+               00118 
+               00119 ;       ADDLW   DIG1
+               00120         ; SAVE START POSITION
+0340 00B1      00121         MOVWF   TEMP1
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 41
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00122 
+               00123 ; TENS
+0341 0084      00124         MOVWF   FSR     
+0342 0800      00125         MOVFW   INDF
+               00126 
+0343 00CC      00127         MOVWF   D_NUM
+               00128         MOVLF   D_MOD,D'10'
+0344 300A          M         MOVLW VAL
+0345 00CB          M         MOVWF REG
+0346 20A7      00129         CALL    MUL
+0347 00D2      00130         MOVWF   TEMP2
+               00131 
+               00132 ; UNITS
+0348 0A31      00133         INCF    TEMP1,W
+0349 0084      00134         MOVWF   FSR     
+034A 0800      00135         MOVFW   INDF
+034B 0752      00136         ADDWF   TEMP2,W
+               00137 
+034C 0008      00138         RETURN
+               00139 
+034D 00140 COPY_TIME_DISPLAY
+               00141 
+               00142         ; HOURS
+034D 3022      00143         MOVLW   DIG3
+034E 2340      00144         CALL COPY_DIGIT
+034F 00B6      00145         MOVWF   C_HOUR
+               00146 
+               00147         ; MINS
+0350 3024      00148         MOVLW   DIG5
+0351 2340      00149         CALL COPY_DIGIT
+0352 00B7      00150         MOVWF   C_MIN
+               00151 
+               00152         ; SECS
+0353 01B8      00153         CLRF C_SEC
+               00154 
+0354 0008      00155         RETURN
+               00156 
+               00157 
+0355 00158 TM_LONGKEYPRESSED
+               00159 
+               00160         CASE TM_MODE,TM_SET
+0355 3001          M         MOVLW   STATE
+0356 0249          M         SUBWF   REG,W
+0357 1903          M         BTFSC   STATUS,Z
+0358 0008      00161         RETURN
+               00162 
+               00163         ; UN-FREEZE DISPLAY
+0359 135D      00164         BCF     MORE_FLAGS,FREEZE
+               00165 
+               00166         ; ENTER TIME SET MODE
+               00167         CASE    IN_KEY,SET_KEY
+035A 300E          M         MOVLW   STATE
+035B 0251          M         SUBWF   REG,W
+035C 1903          M         BTFSC   STATUS,Z
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 42
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+035D 2B6C      00168         GOTO    TM_LKP1
+               00169 
+               00170         ; ENTER LOW POWER MODE
+               00171         CASE    IN_KEY,0
+035E 3000          M         MOVLW   STATE
+035F 0251          M         SUBWF   REG,W
+0360 1903          M         BTFSC   STATUS,Z
+0361 2B63      00172         GOTO    TM_LPM1
+               00173 
+0362 0008      00174         RETURN
+               00175 
+               00176 ; TOGGLE LOW POWER MODE
+0363 00177 TM_LPM1
+               00178         CASE    LP_MODE,0
+0363 3000          M         MOVLW   STATE
+0364 025E          M         SUBWF   REG,W
+0365 1903          M         BTFSC   STATUS,Z
+0366 2B69      00179         GOTO    TM_LPM2
+               00180 
+0367 01DE      00181         CLRF    LP_MODE
+0368 0008      00182         RETURN
+0369 00183 TM_LPM2
+               00184         MOVLF   LP_MODE,1
+0369 3001          M         MOVLW VAL
+036A 00DE          M         MOVWF REG
+036B 0008      00185         RETURN
+               00186 
+               00187 ; ENTER TIME SET MODE
+036C 00188 TM_LKP1
+               00189 
+               00190         ; DON'T ALLOW TIME SET MODE IN LOW POWER MODE
+               00191         CASE    LP_MODE,0
+036C 3000          M         MOVLW   STATE
+036D 025E          M         SUBWF   REG,W
+036E 1903          M         BTFSC   STATUS,Z
+036F 2B71      00192         GOTO    TM_LKP2
+0370 0008      00193         RETURN
+               00194 
+0371 00195 TM_LKP2
+               00196 
+               00197         MOVLF   CURSOR,0X02
+0371 3002          M         MOVLW VAL
+0372 00CE          M         MOVWF REG
+               00198         MOVLF   TM_MODE,TM_SET
+0373 3001          M         MOVLW VAL
+0374 00C9          M         MOVWF REG
+               00199         ; SET UP DISPLAY FOR TIME SETTING
+               00200         MOVLF   DIG1,LETTER_T
+0375 3011          M         MOVLW VAL
+0376 00A0          M         MOVWF REG
+               00201         MOVLF   DIG2,BLANK
+0377 300A          M         MOVLW VAL
+0378 00A1          M         MOVWF REG
+               00202         MOVLF   DIG3,UNDERSCORE
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 43
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0379 300E          M         MOVLW VAL
+037A 00A2          M         MOVWF REG
+               00203         MOVLF   DIG4,UNDERSCORE
+037B 300E          M         MOVLW VAL
+037C 00A3          M         MOVWF REG
+               00204         MOVLF   DIG5,UNDERSCORE
+037D 300E          M         MOVLW VAL
+037E 00A4          M         MOVWF REG
+               00205         MOVLF   DIG6,UNDERSCORE
+037F 300E          M         MOVLW VAL
+0380 00A5          M         MOVWF REG
+               00206         MOVLF   DIG7,SET_COLON
+0381 3013          M         MOVLW VAL
+0382 00A6          M         MOVWF REG
+0383 0008      00207         RETURN
+               00208 
+0384 00209 UPDATE_CLOCK
+0384 0AB8      00210         INCF    C_SEC,F
+               00211         CASE    C_SEC,D'60'
+0385 303C          M         MOVLW   STATE
+0386 0238          M         SUBWF   REG,W
+0387 1903          M         BTFSC   STATUS,Z
+0388 2B8A      00212         GOTO    UC2
+0389 2B99      00213         GOTO    UC1
+038A 00214 UC2
+038A 01B8      00215         CLRF    C_SEC   
+038B 0AB7      00216         INCF    C_MIN,F
+               00217         CASE    C_MIN,D'60'
+038C 303C          M         MOVLW   STATE
+038D 0237          M         SUBWF   REG,W
+038E 1903          M         BTFSC   STATUS,Z
+038F 2B91      00218         GOTO    UC3
+0390 2B99      00219         GOTO    UC1
+0391 00220 UC3
+0391 01B7      00221         CLRF    C_MIN
+0392 0AB6      00222         INCF    C_HOUR,F
+               00223         CASE    C_HOUR,D'24'
+0393 3018          M         MOVLW   STATE
+0394 0236          M         SUBWF   REG,W
+0395 1903          M         BTFSC   STATUS,Z
+0396 2B98      00224         GOTO    UC4
+0397 2B99      00225         GOTO    UC1
+0398 00226 UC4
+0398 01B6      00227         CLRF    C_HOUR
+0399 00228 UC1
+               00229 
+               00230         ; ONLY DO THIS WHEN MINUTES CHANGE
+0399 08B8      00231         MOVF    C_SEC,F
+039A 1D03      00232         BTFSS   STATUS,Z
+039B 0008      00233         RETURN
+               00234 
+039C 239F      00235         CALL    ALARM_CHECK
+039D 23B6      00236         CALL    SNOOZE_CHECK
+               00237 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 44
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+039E 0008      00238         RETURN
+               00239 
+039F 00240 ALARM_CHECK
+               00241         ; CHECK IF ALARM IS ENABLED
+039F 0839      00242         MOVFW   A_HOUR
+03A0 3CFF      00243         SUBLW   0XFF
+03A1 1903      00244         BTFSC   STATUS,Z
+03A2 2BB4      00245         GOTO    UC5
+               00246 
+               00247         ; CHECK IF IT'S ALARM TIME
+03A3 0839      00248         MOVFW   A_HOUR
+03A4 0236      00249         SUBWF   C_HOUR,W
+03A5 1D03      00250         BTFSS   STATUS,Z
+03A6 2BB4      00251         GOTO    UC5
+               00252 
+03A7 083A      00253         MOVFW   A_MIN
+03A8 0237      00254         SUBWF   C_MIN,W
+03A9 1D03      00255         BTFSS   STATUS,Z
+03AA 2BB4      00256         GOTO    UC5
+               00257 
+               00258 
+               00259 ; START ALARM
+03AB 00260 START_ALARM
+03AB 11DD      00261         BCF             MORE_FLAGS,TICKING
+03AC 1550      00262         BSF             TICKS,TM_ALARM_ON
+               00263 
+               00264         ; FORCE MODE TO TIME MODE
+03AD 01C9      00265         CLRF    TM_MODE
+03AE 01CA      00266         CLRF    AL_MODE
+03AF 01DE      00267         CLRF    LP_MODE
+               00268         MOVLF   MODE,MODE_TM
+03B0 3001          M         MOVLW VAL
+03B1 00C7          M         MOVWF REG
+               00269 
+               00270         ; UN-FREEZE DISPLAY
+03B2 135D      00271         BCF     MORE_FLAGS,FREEZE
+               00272 
+03B3 0008      00273         RETURN
+03B4 00274 UC5
+               00275         ; CANCEL ALARM
+03B4 1150      00276         BCF             TICKS,TM_ALARM_ON
+03B5 0008      00277         RETURN
+               00278 
+               00279 ; CALL EVERY MINUTE TO SOUND SNOOZE ALARM
+03B6 00280 SNOOZE_CHECK
+               00281 
+03B6 08DC      00282         MOVF    SNOOZE_MINS,F
+03B7 1903      00283         BTFSC   STATUS,Z
+03B8 2BBD      00284         GOTO    SC1
+               00285 
+               00286         ; DEC SNOOZE TIME
+03B9 03DC      00287         DECF    SNOOZE_MINS,F
+03BA 1D03      00288         BTFSS   STATUS,Z
+03BB 2BBD      00289         GOTO    SC1
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 45
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00290         
+               00291         ; SNOOZE TIMER EXPIRED, SOUND ALARM AS NORMAL
+03BC 2BAB      00292         GOTO    START_ALARM
+03BD 00293 SC1
+03BD 0008      00294         RETURN
+               00295 
+               00296 
+               00297 ; DISPLAY THE CLOCK FOR A FEW SECONDS WHEN IN LP MODE
+03BE 00298 MOMENTARILY_SHOW_CLOCK
+               00299 
+03BE 085E      00300         MOVFW   LP_MODE
+03BF 3C01      00301         SUBLW   1; 2-LP_MODE
+               00302 
+03C0 1803      00303         BTFSC   STATUS,C
+03C1 0008      00304         RETURN
+               00305 
+               00306 ; IF LP_MODE >= 2 THEN RE-ENABLE THE DISPLAY FOR A FEW SECONDS
+03C2 0ADE      00307         INCF    LP_MODE,F
+               00308         CASE    LP_MODE,6
+03C3 3006          M         MOVLW   STATE
+03C4 025E          M         SUBWF   REG,W
+03C5 1903          M         BTFSC   STATUS,Z
+03C6 2BC8      00309         GOTO    MSC1
+03C7 0008      00310         RETURN
+               00311 
+               00312 ; BACK TO LP MODE
+03C8 00313 MSC1
+               00314         MOVLF   LP_MODE,1
+03C8 3001          M         MOVLW VAL
+03C9 00DE          M         MOVWF REG
+03CA 0008      00315         RETURN
+               00043         include "alarm.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+03CB 00017 AL_KEYPRESSED
+               00018 
+               00019         CASENOT AL_MODE,AL_SET
+03CB 3001          M         MOVLW   STATE
+03CC 024A          M         SUBWF   REG,W
+03CD 1D03          M         BTFSS   STATUS,Z
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 46
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+03CE 0008      00020         RETURN
+               00021 
+               00022         ; IF SET KEY PRESSED THEN CANCEL ALARM
+03CF 300E      00023         MOVLW   SET_KEY
+03D0 0251      00024         SUBWF   IN_KEY,W
+03D1 1D03      00025         BTFSS   STATUS,Z
+03D2 2BD9      00026         GOTO    AK_K1
+               00027         
+03D3 30FF      00028         MOVLW   0XFF
+03D4 00B9      00029         MOVWF   A_HOUR
+03D5 00BA      00030         MOVWF   A_MIN
+               00031         MOVLF   AL_MODE,AL_SHOW
+03D6 3000          M         MOVLW VAL
+03D7 00CA          M         MOVWF REG
+03D8 0008      00032         RETURN
+               00033 
+03D9 00034 AK_K1
+               00035 
+03D9 2279      00036         CALL    SET_DIGIT
+               00037 
+               00038         ; IF 'W' IS ZERO, THEN WE'RE DONE
+03DA 39FF      00039         ANDLW   0XFF
+03DB 1D03      00040         BTFSS   STATUS,Z
+03DC 0008      00041         RETURN
+               00042 
+               00043         ; UPDATE ALARM FROM DISPLAY
+03DD 23E1      00044         CALL COPY_ALARM_DISPLAY
+               00045 
+               00046         ; BACK TO ALARM MODE
+               00047         MOVLF AL_MODE,AL_SHOW
+03DE 3000          M         MOVLW VAL
+03DF 00CA          M         MOVWF REG
+03E0 0008      00048         RETURN
+               00049 
+               00050 
+03E1 00051 COPY_ALARM_DISPLAY
+               00052 
+               00053         ; HOURS
+03E1 3022      00054         MOVLW   DIG3
+03E2 2340      00055         CALL COPY_DIGIT
+03E3 00B9      00056         MOVWF   A_HOUR
+               00057 
+               00058         ; HOURS
+03E4 3024      00059         MOVLW   DIG5
+03E5 2340      00060         CALL COPY_DIGIT
+03E6 00BA      00061         MOVWF   A_MIN
+               00062 
+03E7 0008      00063         RETURN
+               00064 
+03E8 00065 AL_LONGKEYPRESSED
+               00066 
+               00067         CASENOT AL_MODE,AL_SHOW
+03E8 3000          M         MOVLW   STATE
+03E9 024A          M         SUBWF   REG,W
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 47
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+03EA 1D03          M         BTFSS   STATUS,Z
+03EB 0008      00068         RETURN
+               00069 
+               00070         CASE    IN_KEY,SET_KEY
+03EC 300E          M         MOVLW   STATE
+03ED 0251          M         SUBWF   REG,W
+03EE 1903          M         BTFSC   STATUS,Z
+03EF 2BF5      00071         GOTO    AL_LKP1
+               00072 
+               00073         ; show s/w version
+               00074         CASE    IN_KEY,0
+03F0 3000          M         MOVLW   STATE
+03F1 0251          M         SUBWF   REG,W
+03F2 1903          M         BTFSC   STATUS,Z
+03F3 2C08      00075         GOTO    AL_LKP2
+               00076 
+03F4 0008      00077         RETURN
+               00078 
+03F5 00079 AL_LKP1
+               00080 
+               00081         MOVLF   CURSOR,0X02
+03F5 3002          M         MOVLW VAL
+03F6 00CE          M         MOVWF REG
+               00082         MOVLF   AL_MODE,AL_SET
+03F7 3001          M         MOVLW VAL
+03F8 00CA          M         MOVWF REG
+               00083         ; SET UP DISPLAY FOR TIME SETTING
+               00084         MOVLF   DIG1,LETTER_A
+03F9 3014          M         MOVLW VAL
+03FA 00A0          M         MOVWF REG
+               00085         MOVLF   DIG2,LETTER_L
+03FB 3015          M         MOVLW VAL
+03FC 00A1          M         MOVWF REG
+               00086         MOVLF   DIG3,UNDERSCORE
+03FD 300E          M         MOVLW VAL
+03FE 00A2          M         MOVWF REG
+               00087         MOVLF   DIG4,UNDERSCORE
+03FF 300E          M         MOVLW VAL
+0400 00A3          M         MOVWF REG
+               00088         MOVLF   DIG5,UNDERSCORE
+0401 300E          M         MOVLW VAL
+0402 00A4          M         MOVWF REG
+               00089         MOVLF   DIG6,UNDERSCORE
+0403 300E          M         MOVLW VAL
+0404 00A5          M         MOVWF REG
+               00090         MOVLF   DIG7,SET_COLON
+0405 3013          M         MOVLW VAL
+0406 00A6          M         MOVWF REG
+0407 0008      00091         RETURN
+               00092 
+0408 00093 AL_LKP2
+               00094 
+               00095         MOVLF   AL_MODE,AL_VER
+0408 3002          M         MOVLW VAL
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 48
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0409 00CA          M         MOVWF REG
+               00096 
+               00097         MOVLF   DIG1,LETTER_R
+040A 3018          M         MOVLW VAL
+040B 00A0          M         MOVWF REG
+               00098         MOVLF   DIG2,LETTER_E
+040C 3012          M         MOVLW VAL
+040D 00A1          M         MOVWF REG
+               00099 
+               00100         ; H/W VERSION
+               00101         MOVLF   DIG3,BLANK
+040E 300A          M         MOVLW VAL
+040F 00A2          M         MOVWF REG
+               00102         MOVLF   DIG4,SYSTEM_VERSION
+0410 3002          M         MOVLW VAL
+0411 00A3          M         MOVWF REG
+               00103 
+               00104         ; S/W VERSION
+               00105         MOVLF   DIG5,SOFTWARE_VERSION_HI
+0412 3002          M         MOVLW VAL
+0413 00A4          M         MOVWF REG
+               00106         MOVLF   DIG6,SOFTWARE_VERSION_LO
+0414 3000          M         MOVLW VAL
+0415 00A5          M         MOVWF REG
+               00107 
+               00108         MOVLF   DIG7,VER_COLON
+0416 3019          M         MOVLW VAL
+0417 00A6          M         MOVWF REG
+               00109 
+0418 0008      00110         RETURN
+               00044         include "countdown.asm"
+               00001 ; Copyright (c) 2007 Mark Longstaff-Tyrrell All Rights Reserved.
+               00002 ; DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+               00003 ;
+               00004 ; This code is free software; you can redistribute it and/or modify it
+               00005 ; under the terms of the GNU General Public License version 3 only, as
+               00006 ; published by the Free Software Foundation.
+               00007 ;
+               00008 ;  This code is distributed in the hope that it will be useful,
+               00009 ;  but WITHOUT ANY WARRANTY; without even the implied warranty of
+               00010 ;  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+               00011 ;  GNU General Public License for more details.
+               00012 ;
+               00013 ;  You should have received a copy of the GNU General Public License
+               00014 ;  along with this work.  If not, see <http://www.gnu.org/licenses/>.
+               00015 
+               00016 
+               00017 
+0419 00018 CD_LONGKEYPRESSED
+               00019 ;       CASE    CD_MODE,CD_RUNNING
+               00020 ;       RETURN
+               00021 
+               00022         ; STOP TIMER AND CLEAR COUNT IF SET KEY HELD DOWN
+               00023         CASE    IN_KEY,SET_KEY
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 49
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0419 300E          M         MOVLW   STATE
+041A 0251          M         SUBWF   REG,W
+041B 1903          M         BTFSC   STATUS,Z
+041C 2C2C      00024         GOTO    CD_LKP1
+               00025 
+               00026         ; ENTER LOW POWER MODE
+               00027         CASE    IN_KEY,0
+041D 3000          M         MOVLW   STATE
+041E 0251          M         SUBWF   REG,W
+041F 1903          M         BTFSC   STATUS,Z
+0420 2C22      00028         GOTO    CD_LPM1
+               00029 
+               00030 
+0421 0008      00031         RETURN
+               00032 
+               00033 ; TOGGLE LOW POWER MODE
+0422 00034 CD_LPM1
+               00035         CASE    LP_MODE,0
+0422 3000          M         MOVLW   STATE
+0423 025E          M         SUBWF   REG,W
+0424 1903          M         BTFSC   STATUS,Z
+0425 2C28      00036         GOTO    CD_LPM2
+               00037 
+0426 01DE      00038         CLRF    LP_MODE
+0427 0008      00039         RETURN
+0428 00040 CD_LPM2
+               00041         MOVLF   LP_MODE,1
+0428 3001          M         MOVLW VAL
+0429 00DE          M         MOVWF REG
+042A 0008      00042         RETURN
+042B 0008      00043         RETURN
+               00044 
+042C 00045 CD_LKP1
+               00046 
+               00047         MOVLF   CD_MODE,CD_PAUSED
+042C 3000          M         MOVLW VAL
+042D 00C8          M         MOVWF REG
+               00048 
+               00049         ; UN-FREEZE DISPLAY
+042E 135D      00050         BCF     MORE_FLAGS,FREEZE
+               00051 
+               00052         ; RESET RUN FLAG (NOW WE CAN ACCEPT NEW TIME INPUT)
+042F 13DD      00053         BCF     MORE_FLAGS,TIMER_RUN
+               00054 
+               00055         ; CLEAR COUNT
+0430 01B2      00056         CLRF    HOUR
+0431 01B3      00057         CLRF    MIN
+0432 01B4      00058         CLRF    SEC
+0433 01B5      00059         CLRF    HUN
+               00060 
+0434 3000      00061         MOVLW   D'0'
+0435 00A0      00062         MOVWF   DIG1
+0436 00A1      00063         MOVWF   DIG2
+0437 00A2      00064         MOVWF   DIG3
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 50
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0438 00A3      00065         MOVWF   DIG4
+0439 00A4      00066         MOVWF   DIG5
+043A 00A5      00067         MOVWF   DIG6
+               00068 
+               00069         ; SET TO COUNT UP MODE
+043B 125D      00070         BCF MORE_FLAGS,UP_DOWN
+               00071 
+043C 0008      00072         RETURN
+               00073 
+               00074 
+043D 00075 CD_MODECHANGED
+               00076         CASE    CD_MODE,CD_PAUSED
+043D 3000          M         MOVLW   STATE
+043E 0248          M         SUBWF   REG,W
+043F 1903          M         BTFSC   STATUS,Z
+0440 2C42      00077         GOTO    CD_MCD1
+0441 0008      00078         RETURN
+0442 00079 CD_MCD1
+               00080         ; REDRAW THE DISPLAY WITH CURRENT CD TIMER VALUES
+               00081 ;       CALL    CD_D4
+0442 2131      00082         CALL    CD_SHOW_HOUR
+0443 213A      00083         CALL    CD_SHOW_MIN
+0444 2147      00084         CALL    CD_SHOW_SEC
+0445 2154      00085         CALL    CD_SHOW_HUN
+               00086 
+0446 0008      00087         RETURN
+               00088 
+               00089 
+0447 00090 CD_KEYPRESSED
+               00091 
+               00092         CASE    LP_MODE,0
+0447 3000          M         MOVLW   STATE
+0448 025E          M         SUBWF   REG,W
+0449 1903          M         BTFSC   STATUS,Z
+044A 2C4E      00093         GOTO    CD_K4
+               00094 
+               00095         ; MOMENTARILY LIGHT THE DISPLAY
+               00096         MOVLF   LP_MODE,2
+044B 3002          M         MOVLW VAL
+044C 00DE          M         MOVWF REG
+044D 0008      00097         RETURN  
+               00098 
+044E 00099 CD_K4
+               00100 
+               00101         ; CHECK FOR START/STOP BUTTON
+               00102         CASE    IN_KEY,SET_KEY
+044E 300E          M         MOVLW   STATE
+044F 0251          M         SUBWF   REG,W
+0450 1903          M         BTFSC   STATUS,Z
+0451 2C85      00103         GOTO    CD_K2
+               00104 
+               00105         CASE CD_MODE,CD_PAUSED
+0452 3000          M         MOVLW   STATE
+0453 0248          M         SUBWF   REG,W
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 51
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0454 1903          M         BTFSC   STATUS,Z
+0455 2C62      00106         GOTO CD_K1
+               00107 
+               00108 IFDEF RALLY
+               00109         ; CHECK FOR FREEZE (LAP) FUNCTION
+               00110         CASE IN_KEY,D'5'
+0456 3005          M         MOVLW   STATE
+0457 0251          M         SUBWF   REG,W
+0458 1903          M         BTFSC   STATUS,Z
+0459 2D10      00111         GOTO FREEZE_COUNT
+               00112 ENDIF
+               00113 
+               00114         ; CHECK FOR LOW POWER KEY SO SETTING LP MODE DOESN'T START THE TICKING
+               00115         CASE IN_KEY,D'0'
+045A 3000          M         MOVLW   STATE
+045B 0251          M         SUBWF   REG,W
+045C 1903          M         BTFSC   STATUS,Z
+045D 0008      00116         RETURN
+               00117 
+               00118         ; TOGGLE TICK SOUND IF ANY OTHER KEY PRESSED
+045E 085D      00119         MOVFW   MORE_FLAGS
+045F 3A01      00120         XORLW   B'00000001'
+0460 00DD      00121         MOVWF   MORE_FLAGS
+               00122 
+0461 0008      00123         RETURN
+               00124         
+0462 00125 CD_K1
+               00126 
+               00127 IFDEF RALLY
+               00128         ; DON'T ACCEPT I/P IF TIMER HAS BEEN RUN (FOR LAP BUTTON FEATURE)
+0462 1BDD      00129         BTFSC   MORE_FLAGS,TIMER_RUN
+0463 0008      00130         RETURN
+               00131 ENDIF
+               00132 
+               00133         ; CHECK VALUE IS < 10
+0464 300A      00134         MOVLW D'10'
+0465 0251      00135         SUBWF   IN_KEY,W
+0466 1803      00136         BTFSC   STATUS,C
+0467 0008      00137         RETURN
+               00138 
+               00139         MOVFF   DIG1,DIG2
+0468 0821          M         MOVFW   REG2
+0469 00A0          M         MOVWF   REG1
+               00140         MOVFF   DIG2,DIG3
+046A 0822          M         MOVFW   REG2
+046B 00A1          M         MOVWF   REG1
+               00141         MOVFF   DIG3,DIG4
+046C 0823          M         MOVFW   REG2
+046D 00A2          M         MOVWF   REG1
+               00142         MOVFF   DIG4,DIG5
+046E 0824          M         MOVFW   REG2
+046F 00A3          M         MOVWF   REG1
+               00143         MOVFF   DIG5,DIG6
+0470 0825          M         MOVFW   REG2
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 52
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+0471 00A4          M         MOVWF   REG1
+               00144         MOVFF   DIG6,IN_KEY
+0472 0851          M         MOVFW   REG2
+0473 00A5          M         MOVWF   REG1
+               00145 
+               00146         ; COPY DISPLAY TO MEMORY
+               00147         ; HOURS
+0474 3020      00148         MOVLW   DIG1
+0475 2340      00149         CALL COPY_DIGIT
+0476 00B2      00150         MOVWF   HOUR
+               00151 
+               00152         ; MINUTES
+0477 3022      00153         MOVLW   DIG3
+0478 2340      00154         CALL COPY_DIGIT
+0479 00B3      00155         MOVWF   MIN
+               00156 
+               00157         ; SECONDS
+047A 3024      00158         MOVLW   DIG5
+047B 2340      00159         CALL COPY_DIGIT
+047C 00B4      00160         MOVWF   SEC
+               00161 
+047D 01B5      00162         CLRF    HUN
+               00163 
+               00164         ; SEE IF WE SHOULD SET COUNT DOWN MODE (DISPLAY != 0)
+047E 0103      00165         CLRW
+047F 0732      00166         ADDWF   HOUR,W
+0480 0733      00167         ADDWF   MIN,W
+0481 0734      00168         ADDWF   SEC,W
+               00169 
+0482 1D03      00170         BTFSS   STATUS,Z
+               00171         ; SET TO COUNT DOWN MODE
+0483 165D      00172         BSF MORE_FLAGS,UP_DOWN
+               00173 
+0484 0008      00174         RETURN
+               00175 
+0485 00176 CD_K2
+               00177         CASE    CD_MODE,CD_RUNNING
+0485 3001          M         MOVLW   STATE
+0486 0248          M         SUBWF   REG,W
+0487 1903          M         BTFSC   STATUS,Z
+0488 2C93      00178         GOTO    CD_K3
+               00179 
+               00180         ; IF PAUSED WITH ZERO ON THE DISPLAY THEN ASSUME COUNT UP MODE
+0489 0832      00181         MOVFW   HOUR
+048A 0433      00182         IORWF   MIN,W
+048B 0434      00183         IORWF   SEC,W
+048C 0435      00184         IORWF   HUN,W
+048D 1903      00185         BTFSC   STATUS,Z
+               00186         ; SET COUNT UP MODE
+048E 125D      00187         BCF MORE_FLAGS,UP_DOWN
+               00188         MOVLF   CD_MODE,CD_RUNNING
+048F 3001          M         MOVLW VAL
+0490 00C8          M         MOVWF REG
+               00189 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 53
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00190         ; NOTE THAT TIMER HAS BEEN STARTED (DON'T ACCEPT CHANGES UNTIL A TIMER RESET)
+0491 17DD      00191         BSF     MORE_FLAGS,TIMER_RUN
+               00192 
+0492 0008      00193         RETURN
+               00194 
+0493 00195 CD_K3
+               00196         ; UN-FREEZE DISPLAY
+0493 135D      00197         BCF     MORE_FLAGS,FREEZE
+               00198         MOVLF   CD_MODE,CD_PAUSED
+0494 3000          M         MOVLW VAL
+0495 00C8          M         MOVWF REG
+               00199 
+               00200         ; REFRESH DISPLAY (IN CASE TIMER HAS BEEN IN FREEZE MODE)
+0496 2442      00201         CALL    CD_MCD1
+0497 0008      00202         RETURN
+               00203 
+               00204 ; called by the ISR, so keep it quick
+               00205 ; update the digits only when they change
+0498 00206 UPDATE_COUNTDOWN
+               00207 
+               00208         ; IF IN COUNT UP MODE THEN CARRY ON COUNTING (NO ALARM OCCURS IN COUNT UP MODE)
+0498 1E5D      00209         BTFSS MORE_FLAGS,UP_DOWN
+0499 2CB0      00210         GOTO    UCD1
+               00211         
+               00212         ; IF DISPLAY IS ZERO, THEN PAUSE TIMER/SOUND ALARM
+049A 0832      00213         MOVFW   HOUR
+049B 0433      00214         IORWF   MIN,W
+049C 0434      00215         IORWF   SEC,W
+049D 0435      00216         IORWF   HUN,W
+049E 1D03      00217         BTFSS   STATUS,Z
+049F 2CB0      00218         GOTO    UCD1
+               00219 
+               00220         ; TIMER EXPIRED, SOUND ALARM OR STAY PAUSED
+               00221         CASE CD_MODE,CD_PAUSED
+04A0 3000          M         MOVLW   STATE
+04A1 0248          M         SUBWF   REG,W
+04A2 1903          M         BTFSC   STATUS,Z
+04A3 2CAF      00222         GOTO    UCD6
+               00223 
+04A4 11DD      00224         BCF             MORE_FLAGS,TICKING
+04A5 15D0      00225         BSF             TICKS,CD_ALARM_ON
+               00226         MOVLF   CD_MODE,CD_PAUSED
+04A6 3000          M         MOVLW VAL
+04A7 00C8          M         MOVWF REG
+               00227 
+               00228         ; FORCE MODE TO COUNTDOWN MODE
+04A8 01C9      00229         CLRF    TM_MODE
+04A9 01CA      00230         CLRF    AL_MODE
+04AA 01DE      00231         CLRF    LP_MODE
+               00232         MOVLF   MODE,MODE_CD
+04AB 3000          M         MOVLW VAL
+04AC 00C7          M         MOVWF REG
+               00233         
+               00234         ; UN-FREEZE DISPLAY
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 54
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+04AD 135D      00235         BCF     MORE_FLAGS,FREEZE
+               00236 
+               00237         ; REDRAW THE COUNTDOWN DISPLAY
+04AE 2167      00238         CALL    CD_D5
+               00239 
+04AF 00240 UCD6
+04AF 0008      00241         RETURN
+               00242 
+04B0 00243 UCD1
+               00244 
+               00245         ; UPDATE THE COUNTER COUNT
+               00246 
+               00247         ; ARE WE COUNTING UP OR DOWN?
+04B0 1E5D      00248         BTFSS   MORE_FLAGS,UP_DOWN
+04B1 2CE3      00249         GOTO    UCD_COUNT_UP
+               00250 
+               00251         ; COUNT DOWN
+               00252 
+04B2 03B5      00253         DECF    HUN,F
+               00254 
+               00255         CASE    HUN,0XFF
+04B3 30FF          M         MOVLW   STATE
+04B4 0235          M         SUBWF   REG,W
+04B5 1903          M         BTFSC   STATUS,Z
+04B6 2CB8      00256         GOTO    UCD2
+               00257 
+               00258 ;       CALL    CD_SHOW_HUN
+04B7 0008      00259         RETURN
+04B8 00260 UCD2
+               00261 ;       CALL    CD_SHOW_HUN
+               00262 ;
+04B8 01B5      00263         CLRF    HUN
+               00264         ; CHECK IF THERE ARE ANY MORE HH:MM:SS LEFT
+04B9 0832      00265         MOVFW   HOUR
+04BA 0433      00266         IORWF   MIN,W
+04BB 0434      00267         IORWF   SEC,W
+04BC 1903      00268         BTFSC   STATUS,Z
+04BD 0008      00269         RETURN
+               00270 
+               00271         MOVLF   HUN,D'99'
+04BE 3063          M         MOVLW VAL
+04BF 00B5          M         MOVWF REG
+04C0 03B4      00272         DECF    SEC,F
+               00273 
+04C1 2501      00274         CALL    TICK_TOCK       ; MAKE TICKING SOUND
+               00275 
+               00276 
+               00277 ;       ; DISPLAY NEW SECONDS
+               00278 ;       MOVF    HOUR,F
+               00279 ;       BTFSS   STATUS,Z
+               00280 ;       DISPLAY SEC,DIG5
+               00281         
+               00282         CASE    SEC,0XFF
+04C2 30FF          M         MOVLW   STATE
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 55
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+04C3 0234          M         SUBWF   REG,W
+04C4 1903          M         BTFSC   STATUS,Z
+04C5 2CC7      00283         GOTO    UCD3
+               00284 
+               00285 ;       CALL    CD_SHOW_HUN
+04C6 0008      00286         RETURN
+04C7 00287 UCD3
+04C7 01B4      00288         CLRF    SEC
+               00289 ;       CALL    CD_SHOW_HUN
+               00290 
+               00291         ; CHECK IF THERE ARE ANY MORE HH:MM LEFT
+04C8 3000      00292         MOVLW   0X00
+04C9 0832      00293         MOVFW   HOUR
+04CA 0433      00294         IORWF   MIN,W
+04CB 1903      00295         BTFSC   STATUS,Z
+04CC 0008      00296         RETURN
+               00297 
+               00298         MOVLF   SEC,D'59'
+04CD 303B          M         MOVLW VAL
+04CE 00B4          M         MOVWF REG
+04CF 03B3      00299         DECF    MIN,F
+               00300         CASE    MIN,0XFF
+04D0 30FF          M         MOVLW   STATE
+04D1 0233          M         SUBWF   REG,W
+04D2 1903          M         BTFSC   STATUS,Z
+04D3 2CD5      00301         GOTO    UCD4
+               00302 
+               00303 ;       CALL    CD_SHOW_HUN
+04D4 0008      00304         RETURN
+04D5 00305 UCD4
+04D5 01B3      00306         CLRF    MIN
+               00307 ;       CALL    CD_SHOW_HUN
+               00308 
+               00309         ; CHECK IF THERE ARE ANY MORE HH LEFT
+04D6 0832      00310         MOVFW   HOUR
+04D7 1903      00311         BTFSC   STATUS,Z
+04D8 0008      00312         RETURN
+               00313 
+               00314         MOVLF   MIN,D'59'
+04D9 303B          M         MOVLW VAL
+04DA 00B3          M         MOVWF REG
+04DB 03B2      00315         DECF    HOUR,F
+               00316         CASE    HOUR,0XFF
+04DC 30FF          M         MOVLW   STATE
+04DD 0232          M         SUBWF   REG,W
+04DE 1903          M         BTFSC   STATUS,Z
+04DF 2CE1      00317         GOTO    UCD5
+               00318 
+               00319 ;       CALL    CD_SHOW_HUN
+04E0 0008      00320         RETURN
+04E1 00321 UCD5
+04E1 01B2      00322         CLRF    HOUR
+               00323 ;       CALL    CD_SHOW_HUN
+04E2 0008      00324         RETURN
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 56
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00325 
+               00326 
+               00327 ; COUNT UP
+04E3 00328 UCD_COUNT_UP
+               00329 
+04E3 0AB5      00330         INCF    HUN,F
+               00331 
+               00332         CASE    HUN,D'100'
+04E4 3064          M         MOVLW   STATE
+04E5 0235          M         SUBWF   REG,W
+04E6 1903          M         BTFSC   STATUS,Z
+04E7 2CE9      00333         GOTO    UCD2_UP
+               00334 
+04E8 0008      00335         RETURN
+04E9 00336 UCD2_UP
+04E9 01B5      00337         CLRF    HUN
+04EA 0AB4      00338         INCF    SEC,F
+               00339 
+04EB 2501      00340         CALL    TICK_TOCK       ; MAKE TICKING SOUND
+               00341         
+               00342         CASE    SEC,D'60'
+04EC 303C          M         MOVLW   STATE
+04ED 0234          M         SUBWF   REG,W
+04EE 1903          M         BTFSC   STATUS,Z
+04EF 2CF1      00343         GOTO    UCD3_UP
+               00344 
+04F0 0008      00345         RETURN
+04F1 00346 UCD3_UP
+04F1 01B4      00347         CLRF    SEC
+               00348 
+04F2 0AB3      00349         INCF    MIN,F
+               00350         CASE    MIN,D'60'
+04F3 303C          M         MOVLW   STATE
+04F4 0233          M         SUBWF   REG,W
+04F5 1903          M         BTFSC   STATUS,Z
+04F6 2CF8      00351         GOTO    UCD4_UP
+04F7 0008      00352         RETURN
+04F8 00353 UCD4_UP
+04F8 01B3      00354         CLRF    MIN
+               00355 
+04F9 0AB2      00356         INCF    HOUR,F
+               00357         CASE    HOUR,D'100'
+04FA 3064          M         MOVLW   STATE
+04FB 0232          M         SUBWF   REG,W
+04FC 1903          M         BTFSC   STATUS,Z
+04FD 2CFF      00358         GOTO    UCD5_UP
+04FE 0008      00359         RETURN
+04FF 00360 UCD5_UP
+04FF 01B2      00361         CLRF    HOUR
+0500 0008      00362         RETURN
+               00363 ;
+               00364 
+               00365 ; MAKE TICK TOCK SOUND
+0501 00366 TICK_TOCK
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 57
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00367         CASE MODE,MODE_CD
+0501 3000          M         MOVLW   STATE
+0502 0247          M         SUBWF   REG,W
+0503 1903          M         BTFSC   STATUS,Z
+0504 2D06      00368         GOTO    T_T1
+0505 0008      00369         RETURN
+0506 00370 T_T1
+               00371 
+               00372         ; TOGGLE TICK TONE
+0506 085D      00373         MOVFW   MORE_FLAGS
+0507 3A04      00374         XORLW   B'00000100'
+0508 00DD      00375         MOVWF   MORE_FLAGS
+               00376 
+0509 1C5D      00377         BTFSS   MORE_FLAGS,TICK_EN
+050A 0008      00378         RETURN
+               00379 
+               00380         TICKSOUND
+050B 15DD          M         BSF             MORE_FLAGS,TICKING
+                   M         MOVLF   BUZZER_COUNT,0X20 ;0X1F
+050C 3020          M         MOVLW VAL
+050D 00D7          M         MOVWF REG
+050E 1650          M         BSF             TICKS,KEYBEEP
+050F 0008      00381         RETURN
+               00382 
+0510 00383 FREEZE_COUNT
+               00384         TOGGLEBIT MORE_FLAGS,FREEZE
+0510 01B1          M         CLRF    TEMP1
+0511 1731          M         BSF             TEMP1,BIT
+0512 0831          M         MOVFW   TEMP1
+0513 06DD          M         XORWF   REG,F   
+0514 0008      00385         RETURN
+               00045 
+               00046 
+               00047 
+               00048 ;***********************
+0515 00049 START
+               00050 
+               00051         ; SET UP THE SYSTEM
+0515 2005      00052         CALL    INITIALISE
+               00053 
+               00054 ; Main program loop
+0516 00055 MAIN
+               00056 
+               00057         ; UPDATE THE DISPLAY MEMORY 
+0516 1F50      00058         BTFSS   TICKS,DISPLAY_INT
+0517 2D1A      00059         GOTO    M3
+               00060 
+0518 2118      00061         CALL    UPDATE_DISPLAY
+0519 1350      00062         BCF             TICKS,DISPLAY_INT
+               00063 
+051A 00064 M3
+               00065 
+               00066         ; CHECK FOR A KEYPRESS
+               00067         ; NOTE 'CURRENT_KEY' MIGHT CHANGE AT ANY TIME
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 58
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00068         ; SO COPY IT
+               00069         MOVFF   IN_KEY,CURRENT_KEY
+051A 0844          M         MOVFW   REG2
+051B 00D1          M         MOVWF   REG1
+051C 1BD1      00070         BTFSC   IN_KEY,7
+051D 2D5D      00071         GOTO    M1
+               00072 
+               00073         ; IF KEY HAS CHANGED (PREVENT ROLLOVER)
+051E 0846      00074         MOVFW   LAST_KEY
+051F 0251      00075         SUBWF   IN_KEY,W
+0520 1903      00076         BTFSC   STATUS,Z
+0521 2D60      00077         GOTO    M2
+               00078 
+               00079         MOVFF   LAST_KEY,IN_KEY
+0522 0851          M         MOVFW   REG2
+0523 00C6          M         MOVWF   REG1
+0524 01CF      00080         CLRF    KEY_COUNT
+               00081 
+               00082         ; HANDLE TIME GLIMPSE IN LP MODE
+               00083         CASE    LP_MODE,0
+0525 3000          M         MOVLW   STATE
+0526 025E          M         SUBWF   REG,W
+0527 1903          M         BTFSC   STATUS,Z
+0528 2D2E      00084         GOTO    M8
+               00085 
+               00086         ; DISPLAY TIME FOR A COUPLE OF SECONDS IF A KEY IS PRESSED
+               00087         CASE    LP_MODE,1
+0529 3001          M         MOVLW   STATE
+052A 025E          M         SUBWF   REG,W
+052B 1903          M         BTFSC   STATUS,Z
+052C 0ADE      00088         INCF    LP_MODE,F
+               00089 
+052D 2D16      00090         GOTO    MAIN
+052E 00091 M8
+               00092 
+               00093         ; MAKE KEYSOUND
+               00094         KEYSOUND
+052E 11DD          M         BCF             MORE_FLAGS,TICKING
+                   M         MOVLF   BUZZER_COUNT,0X30 ;0X1F
+052F 3030          M         MOVLW VAL
+0530 00D7          M         MOVWF REG
+0531 1650          M         BSF             TICKS,KEYBEEP
+               00095 
+               00096         ; CANCEL ALARMS/SET SNOOZE
+0532 0850      00097         MOVFW   TICKS
+0533 390C      00098         ANDLW   B'00001100'; IF ALARM IS SOUNDING
+0534 1903      00099         BTFSC   STATUS,Z
+0535 2D48      00100         GOTO    M4
+               00101 
+               00102         CASE IN_KEY,MODE_KEY
+0536 300F          M         MOVLW   STATE
+0537 0251          M         SUBWF   REG,W
+0538 1903          M         BTFSC   STATUS,Z
+0539 2D41      00103         GOTO    M5      
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 59
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+053A 00104 M6
+               00105         ; restore display if we're cancelling countdown alarm
+053A 19D0      00106         BTFSC   TICKS,CD_ALARM_ON       
+053B 216B      00107         CALL    CD_D4
+               00108 
+053C 01DC      00109         CLRF    SNOOZE_MINS
+053D 1150      00110         BCF             TICKS,TM_ALARM_ON
+053E 11D0      00111         BCF             TICKS,CD_ALARM_ON
+053F 01D7      00112         CLRF    BUZZER_COUNT
+               00113 
+0540 2D16      00114         GOTO MAIN
+               00115 
+0541 00116 M5      ; STOP ALARM, SET SNOOZE MODE
+0541 1D50      00117         BTFSS   TICKS,TM_ALARM_ON
+0542 2D3A      00118         GOTO    M6
+               00119         MOVLF   SNOOZE_MINS,SNOOZE_DURATION
+0543 300A          M         MOVLW VAL
+0544 00DC          M         MOVWF REG
+0545 1150      00120         BCF             TICKS,TM_ALARM_ON
+0546 01D7      00121         CLRF    BUZZER_COUNT
+0547 2D16      00122         GOTO    MAIN
+               00123 
+0548 00124 M4
+               00125 
+               00126         CASE IN_KEY,MODE_KEY
+0548 300F          M         MOVLW   STATE
+0549 0251          M         SUBWF   REG,W
+054A 1903          M         BTFSC   STATUS,Z
+054B 2D95      00127         GOTO    CANCEL_SNOOZE
+               00128 
+054C 00129 M7
+               00130         CASE IN_KEY,MODE_KEY
+054C 300F          M         MOVLW   STATE
+054D 0251          M         SUBWF   REG,W
+054E 1903          M         BTFSC   STATUS,Z
+054F 2D78      00131         GOTO    CHANGE_MODE
+               00132 
+               00133         ; SWITCH MODE
+               00134         CASE MODE,MODE_CD
+0550 3000          M         MOVLW   STATE
+0551 0247          M         SUBWF   REG,W
+0552 1903          M         BTFSC   STATUS,Z
+0553 2447      00135         CALL    CD_KEYPRESSED
+               00136 
+               00137         CASE MODE,MODE_TM
+0554 3001          M         MOVLW   STATE
+0555 0247          M         SUBWF   REG,W
+0556 1903          M         BTFSC   STATUS,Z
+0557 22FB      00138         CALL    TM_KEYPRESSED
+               00139 
+               00140         CASE MODE,MODE_AL
+0558 3002          M         MOVLW   STATE
+0559 0247          M         SUBWF   REG,W
+055A 1903          M         BTFSC   STATUS,Z
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 60
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+055B 23CB      00141         CALL    AL_KEYPRESSED
+055C 2D16      00142         GOTO MAIN
+               00143 
+               00144 
+               00145 ; NO KEY PRESSED
+055D 00146 M1
+               00147         ; CLEAR LAST KEYPRESS
+               00148         MOVLF   LAST_KEY,0XFF
+055D 30FF          M         MOVLW VAL
+055E 00C6          M         MOVWF REG
+055F 2D16      00149         GOTO MAIN
+               00150 
+0560 00151 M2
+               00152         CASE KEY_COUNT,LONG_KEY
+0560 3004          M         MOVLW   STATE
+0561 024F          M         SUBWF   REG,W
+0562 1903          M         BTFSC   STATUS,Z
+0563 2D65      00153         GOTO LONG_KEYPRESS
+0564 2D16      00154         GOTO MAIN
+               00155 
+               00156 
+0565 00157 LONG_KEYPRESS
+               00158 
+0565 01CF      00159         CLRF    KEY_COUNT
+               00160 
+               00161         ; UN-FREEZE DISPLAY
+0566 135D      00162         BCF     MORE_FLAGS,FREEZE
+               00163 
+               00164         ; MAKE KEYSOUND
+               00165         KEYSOUND
+0567 11DD          M         BCF             MORE_FLAGS,TICKING
+                   M         MOVLF   BUZZER_COUNT,0X30 ;0X1F
+0568 3030          M         MOVLW VAL
+0569 00D7          M         MOVWF REG
+056A 1650          M         BSF             TICKS,KEYBEEP
+               00166 
+               00167         ; SWITCH MODE
+               00168         CASE MODE,MODE_CD
+056B 3000          M         MOVLW   STATE
+056C 0247          M         SUBWF   REG,W
+056D 1903          M         BTFSC   STATUS,Z
+056E 2419      00169         CALL    CD_LONGKEYPRESSED
+               00170 
+               00171         CASE MODE,MODE_TM
+056F 3001          M         MOVLW   STATE
+0570 0247          M         SUBWF   REG,W
+0571 1903          M         BTFSC   STATUS,Z
+0572 2355      00172         CALL    TM_LONGKEYPRESSED
+               00173 
+               00174         CASE MODE,MODE_AL
+0573 3002          M         MOVLW   STATE
+0574 0247          M         SUBWF   REG,W
+0575 1903          M         BTFSC   STATUS,Z
+0576 23E8      00175         CALL    AL_LONGKEYPRESSED
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 61
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00176 
+0577 2D16      00177         GOTO MAIN
+               00178 
+               00179 
+0578 00180 CHANGE_MODE
+               00181 
+               00182         ; UN-FREEZE DISPLAY
+0578 135D      00183         BCF     MORE_FLAGS,FREEZE
+               00184 
+               00185         CASE    MODE,MODE_TM
+0579 3001          M         MOVLW   STATE
+057A 0247          M         SUBWF   REG,W
+057B 1903          M         BTFSC   STATUS,Z
+057C 2D86      00186         GOTO    CM3
+057D 00187 CM4
+               00188         ; RESET MODES WITH SUBMODES
+057D 01C9      00189         CLRF    TM_MODE
+057E 01CA      00190         CLRF    AL_MODE
+               00191 
+057F 00192 CM2
+057F 0AC7      00193         INCF    MODE,F
+               00194         CASE MODE,MAX_MODE
+0580 3003          M         MOVLW   STATE
+0581 0247          M         SUBWF   REG,W
+0582 1903          M         BTFSC   STATUS,Z
+0583 01C7      00195         CLRF    MODE
+               00196 
+               00197 ; CALL MODECHANGED...
+0584 2590      00198         CALL MODECHANGED
+               00199 
+0585 2D16      00200         GOTO MAIN
+               00201 
+0586 00202 CM3
+               00203         ; 12/24 HOUR MODE CHANGE
+               00204 
+               00205         ; WHEN MODE IS PRESSED DURING TIME SET
+               00206         CASE    TM_MODE,TM_TIME
+0586 3000          M         MOVLW   STATE
+0587 0249          M         SUBWF   REG,W
+0588 1903          M         BTFSC   STATUS,Z
+0589 2D7D      00207         GOTO    CM4
+               00208 
+               00209         ; TOGGLE 12/24 HOUR MODE
+               00210         TOGGLEBIT MORE_FLAGS,MIL_MODE
+058A 01B1          M         CLRF    TEMP1
+058B 16B1          M         BSF             TEMP1,BIT
+058C 0831          M         MOVFW   TEMP1
+058D 06DD          M         XORWF   REG,F   
+               00211 
+               00212         ; CLEAR TIME SET MODE
+058E 01C9      00213         CLRF    TM_MODE
+058F 2D16      00214         GOTO    MAIN
+               00215 
+0590 00216 MODECHANGED
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 62
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+               00217 ; INFORM MODES THAT THE MODE HAS CHANGED
+               00218         CASE MODE,MODE_CD
+0590 3000          M         MOVLW   STATE
+0591 0247          M         SUBWF   REG,W
+0592 1903          M         BTFSC   STATUS,Z
+0593 243D      00219         CALL    CD_MODECHANGED
+0594 0008      00220         RETURN
+               00221 
+0595 00222 CANCEL_SNOOZE   ; CANCEL SNOOZE MODE
+0595 08DC      00223         MOVF    SNOOZE_MINS,F
+0596 1903      00224         BTFSC   STATUS,Z
+0597 2D4C      00225         GOTO    M7
+0598 01DC      00226         CLRF    SNOOZE_MINS
+0599 2D16      00227         GOTO    MAIN
+               00228 
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 63
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+ACCEPT_KEY                        0000022D
+ADCON0                            0000001F
+ADCON1                            0000009F
+ADCS0                             00000006
+ADCS1                             00000007
+ADIE                              00000006
+ADIF                              00000006
+ADON                              00000000
+ADRES                             0000001E
+AK_K1                             000003D9
+ALARM_CHECK                       0000039F
+ALARM_TONE                        00000002
+AL_D1                             00000223
+AL_D2                             00000224
+AL_DISPLAY                        000001FF
+AL_KEYPRESSED                     000003CB
+AL_LKP1                           000003F5
+AL_LKP2                           00000408
+AL_LONGKEYPRESSED                 000003E8
+AL_MODE                           0000004A
+AL_SET                            00000001
+AL_SHOW                           00000000
+AL_VER                            00000002
+A_HOUR                            00000039
+A_MIN                             0000003A
+BARS                              0000000F
+BF                                00000000
+BLANK                             0000000A
+BRIGHTNESS                        00000055
+BUZZER                            00000000
+BUZZER_COUNT                      00000057
+BUZZER_PHASE                      00000005
+C                                 00000000
+CANCEL_SNOOZE                     00000595
+CCP1CON                           00000017
+CCP1IE                            00000002
+CCP1IF                            00000002
+CCP1M0                            00000000
+CCP1M1                            00000001
+CCP1M2                            00000002
+CCP1M3                            00000003
+CCP1X                             00000005
+CCP1Y                             00000004
+CCPR1H                            00000016
+CCPR1L                            00000015
+CD_ALARM_ON                       00000003
+CD_C1                             0000019A
+CD_COLONS                         00000185
+CD_D2                             00000170
+CD_D3                             0000016A
+CD_D4                             0000016B
+CD_D5                             00000167
+CD_D6                             0000018E
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 64
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+CD_D7                             00000191
+CD_D8                             00000198
+CD_DISPLAY                        0000015C
+CD_K1                             00000462
+CD_K2                             00000485
+CD_K3                             00000493
+CD_K4                             0000044E
+CD_KEYPRESSED                     00000447
+CD_LKP1                           0000042C
+CD_LONGKEYPRESSED                 00000419
+CD_LPM1                           00000422
+CD_LPM2                           00000428
+CD_MCD1                           00000442
+CD_MODE                           00000048
+CD_MODECHANGED                    0000043D
+CD_PAUSED                         00000000
+CD_RUNNING                        00000001
+CD_SH1                            0000015B
+CD_SHO1                           00000135
+CD_SHOW_HOUR                      00000131
+CD_SHOW_HUN                       00000154
+CD_SHOW_MIN                       0000013A
+CD_SHOW_SEC                       00000147
+CD_SM1                            00000142
+CD_SS1                            0000014F
+CHANGE_MODE                       00000578
+CHS0                              00000003
+CHS1                              00000004
+CHS2                              00000005
+CKE                               00000006
+CKP                               00000004
+CM2                               0000057F
+CM3                               00000586
+CM4                               0000057D
+COLONS                            0000000B
+COLON_12H                         0000001A
+COLON_BOT                         0000001C
+COLON_TOP                         0000001B
+COPY_ALARM_DISPLAY                000003E1
+COPY_DIGIT                        00000340
+COPY_TIME_DISPLAY                 0000034D
+COUNTER                           0000003C
+CURRENT_KEY                       00000044
+CURSOR                            0000004E
+C_HOUR                            00000036
+C_MIN                             00000037
+C_SEC                             00000038
+D                                 00000005
+DASH                              0000000D
+DATA_ADDRESS                      00000005
+DC                                00000001
+DIG1                              00000020
+DIG2                              00000021
+DIG3                              00000022
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 65
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+DIG4                              00000023
+DIG5                              00000024
+DIG6                              00000025
+DIG7                              00000026
+DIGIT1                            00000000
+DIGIT2                            00000001
+DIGIT3                            00000002
+DIGIT4                            00000003
+DIGIT5                            00000004
+DIGIT6                            00000005
+DIGIT7                            00000007
+DIGIT_LOOKUP                      00000096
+DISPLAY_INT                       00000006
+DIV                               0000009D
+DLY10US                           000002E8
+DOTS                              0000000C
+D_A                               00000005
+D_DIV                             0000004D
+D_MOD                             0000004B
+D_NUM                             0000004C
+EQUALS                            00000010
+F                                 00000001
+FRAME_COUNT                       00000056
+FREEZE                            00000006
+FREEZE_CLOCK                      00000338
+FREEZE_COLONS                     00000236
+FREEZE_COUNT                      00000510
+FSR                               00000004
+GIE                               00000007
+GO                                00000002
+GO_DONE                           00000002
+HOUR                              00000032
+HSECOND_COUNT                     00000005
+HUN                               00000035
+I2C_DATA                          00000005
+I2C_READ                          00000002
+I2C_START                         00000003
+I2C_STOP                          00000004
+ICOUNTER                          0000003E
+ID_DIV                            0000005B
+ID_MOD                            00000059
+ID_NUM                            0000005A
+IFSR                              00000058
+IHSECOND                          00000041
+IHSECONDS                         000000DA
+INDF                              00000000
+INITIALISE                        00000005
+INT                               000000AD
+INTCON                            0000000B
+INTE                              00000004
+INTEDG                            00000006
+INTF                              00000001
+INT_CORRECT                       00000053
+INT_CURSOR                        00000054
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 66
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+IN_KEY                            00000051
+IRP                               00000007
+ISECOND                           00000040
+ISECONDS                          000000E4
+ITEMP1                            0000003D
+ITICKS                            000000C8
+ITSECOND                          00000042
+ITSECONDS                         000000D4
+KB_COL1                           00000003
+KB_COL2                           00000002
+KB_COL3                           00000001
+KB_ROW1                           00000007
+KB_ROW2                           00000006
+KB_ROW3                           00000005
+KB_ROW4                           00000004
+KEYBEEP                           00000004
+KEY_COL                           00000043
+KEY_COUNT                         0000004F
+KEY_MAPPING                       00000063
+LAST_KEY                          00000046
+LD1                               000000A5
+LETTER_A                          00000014
+LETTER_E                          00000012
+LETTER_L                          00000015
+LETTER_N                          00000016
+LETTER_P                          00000017
+LETTER_R                          00000018
+LETTER_T                          00000011
+LONG_KEY                          00000004
+LONG_KEYPRESS                     00000565
+LOOP_DIV                          0000009F
+LOW_POWER_MODE                    000002C7
+LPM1                              000002E4
+LP_MODE                           0000005E
+M1                                0000055D
+M2                                00000560
+M3                                0000051A
+M4                                00000548
+M5                                00000541
+M6                                0000053A
+M7                                0000054C
+M8                                0000052E
+MAIN                              00000516
+MAX_MODE                          00000003
+MIL_MODE                          00000005
+MIN                               00000033
+MODE                              00000047
+MODECHANGED                       00000590
+MODE_AL                           00000002
+MODE_CD                           00000000
+MODE_KEY                          0000000F
+MODE_TM                           00000001
+MOMENTARILY_SHOW_CLOCK            000003BE
+MORE_FLAGS                        0000005D
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 67
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+MPX_CYCLES                        0000005F
+MPX_DIGIT                         0000003B
+MPX_I0                            000002B2
+MPX_I1                            000002BA
+MPX_I2                            000002BE
+MPX_I6                            000002C5
+MPX_I7                            000002A1
+MPX_INTERRUPT                     0000028E
+MSC1                              000003C8
+MUL                               000000A7
+MUL1                              000000A8
+NOT_A                             00000005
+NOT_ADDRESS                       00000005
+NOT_BO                            00000000
+NOT_BOR                           00000000
+NOT_DONE                          00000002
+NOT_PD                            00000003
+NOT_POR                           00000001
+NOT_RBPU                          00000007
+NOT_T1SYNC                        00000002
+NOT_TO                            00000004
+NOT_W                             00000002
+NOT_WRITE                         00000002
+OPTION_REG                        00000081
+P                                 00000004
+P1LOOP                            000002F5
+P1SEC                             000002F3
+PCFG0                             00000000
+PCFG1                             00000001
+PCFG2                             00000002
+PCL                               00000002
+PCLATH                            0000000A
+PCON                              0000008E
+PEIE                              00000006
+PIE1                              0000008C
+PIR1                              0000000C
+PMADRH                            0000010F
+PMADRL                            0000010D
+PMCON1                            0000018C
+PMDATH                            0000010E
+PMDATL                            0000010C
+PORTA                             00000005
+PORTB                             00000006
+PORTC                             00000007
+PR2                               00000092
+PRODUCTION                        00000002
+PROTOTYPE_1                       00000000
+PROTOTYPE_2                       00000001
+PS0                               00000000
+PS1                               00000001
+PS2                               00000002
+PSA                               00000003
+PTEMP1                            00000029
+PTEMP2                            00000030
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 68
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+PTRN                              00000070
+R                                 00000002
+RALLY                             00000014
+RBIE                              00000003
+RBIF                              00000000
+RD                                00000000
+READ_WRITE                        00000002
+RP0                               00000005
+RP1                               00000006
+R_W                               00000002
+S                                 00000003
+SC1                               000003BD
+SCAN_KEYBOARD                     0000023B
+SD1                               00000280
+SD2                               00000287
+SD3                               0000028C
+SEC                               00000034
+SECOUND_COUNT                     00000002
+SEG_A                             00000000
+SEG_B                             00000001
+SEG_C                             00000002
+SEG_D                             00000003
+SEG_E                             00000004
+SEG_F                             00000005
+SEG_G                             00000006
+SET_BRIGHTNESS_1                  0000032F
+SET_BRIGHTNESS_2                  00000332
+SET_BRIGHTNESS_3                  00000335
+SET_COLON                         00000013
+SET_DIGIT                         00000279
+SET_KEY                           0000000E
+SHOW_DIGIT                        00000125
+SK2                               00000264
+SK3                               00000271
+SK4                               00000263
+SMP                               00000007
+SNOOZE_CHECK                      000003B6
+SNOOZE_DURATION                   0000000A
+SNOOZE_MINS                       0000005C
+SOFTWARE_VERSION_HI               00000002
+SOFTWARE_VERSION_LO               00000000
+SSPADD                            00000093
+SSPBUF                            00000013
+SSPCON                            00000014
+SSPEN                             00000005
+SSPIE                             00000003
+SSPIF                             00000003
+SSPM0                             00000000
+SSPM1                             00000001
+SSPM2                             00000002
+SSPM3                             00000003
+SSPOV                             00000006
+SSPSTAT                           00000094
+START                             00000515
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 69
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+START_ALARM                       000003AB
+STATUS                            00000003
+STATUS_TEMP                       00000027
+SUBTICKS                          0000003F
+SUBTICK_COUNT                     00000014
+SYSTEM_VERSION                    00000002
+T0CS                              00000005
+T0IE                              00000005
+T0IF                              00000002
+T0SE                              00000004
+T1CKPS0                           00000004
+T1CKPS1                           00000005
+T1CON                             00000010
+T1INSYNC                          00000002
+T1OSCEN                           00000003
+T2CKPS0                           00000000
+T2CKPS1                           00000001
+T2CON                             00000012
+T2I2                              00000103
+T2I3                              00000115
+T2I4                              00000117
+T2I5                              00000109
+T2I6                              00000110
+TEMP1                             00000031
+TEMP2                             00000052
+TEMP_KEY                          00000045
+TICKING                           00000003
+TICKS                             00000050
+TICKS_BUZZER                      00000007
+TICKS_DUMMY                       00000000
+TICKS_HSECOND                     00000001
+TICK_EN                           00000000
+TICK_TOCK                         00000501
+TIMER2_INTERRUPT                  000000E9
+TIMER_RUN                         00000007
+TIME_LIMITS                       0000008F
+TMR0                              00000001
+TMR0IE                            00000005
+TMR0IF                            00000002
+TMR1CS                            00000001
+TMR1H                             0000000F
+TMR1IE                            00000000
+TMR1IF                            00000000
+TMR1L                             0000000E
+TMR1ON                            00000000
+TMR2                              00000011
+TMR2IE                            00000001
+TMR2IF                            00000001
+TMR2ON                            00000002
+TM_ALARM_ON                       00000002
+TM_ALTDATETIME                    00000002
+TM_D1                             000001F7
+TM_D2                             000001BB
+TM_D3                             000001E4
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 70
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+TM_D4                             000001CB
+TM_D5                             000001E1
+TM_DATE                           00000003
+TM_DATETIME                       00000001
+TM_DISPLAY                        0000019B
+TM_KEYPRESSED                     000002FB
+TM_KP1                            0000030D
+TM_KP2                            0000031E
+TM_KP3                            00000302
+TM_LKP1                           0000036C
+TM_LKP2                           00000371
+TM_LONGKEYPRESSED                 00000355
+TM_LPM1                           00000363
+TM_LPM2                           00000369
+TM_MODE                           00000049
+TM_SET                            00000001
+TM_TIME                           00000000
+TONE_TOG                          00000001
+TOUTPS0                           00000003
+TOUTPS1                           00000004
+TOUTPS2                           00000005
+TOUTPS3                           00000006
+TRISA                             00000085
+TRISB                             00000086
+TRISC                             00000087
+TSECOND_COUNT                     0000000A
+T_T1                              00000506
+UA                                00000001
+UC1                               00000399
+UC2                               0000038A
+UC3                               00000391
+UC4                               00000398
+UC5                               000003B4
+UCD1                              000004B0
+UCD2                              000004B8
+UCD2_UP                           000004E9
+UCD3                              000004C7
+UCD3_UP                           000004F1
+UCD4                              000004D5
+UCD4_UP                           000004F8
+UCD5                              000004E1
+UCD5_UP                           000004FF
+UCD6                              000004AF
+UCD_COUNT_UP                      000004E3
+UNDERSCORE                        0000000E
+UPDATE_CLOCK                      00000384
+UPDATE_COUNTDOWN                  00000498
+UPDATE_DISPLAY                    00000118
+UP_DOWN                           00000004
+VER_COLON                         00000019
+W                                 00000000
+WCOL                              00000007
+W_TEMP                            00000028
+Z                                 00000002
+gpasm-0.13.7 beta               ./timer.asm 10-25-2012  23:18:22         PAGE 71
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+ 
+_BODEN_OFF                        00003FBF
+_BODEN_ON                         00003FFF
+_BOREN_OFF                        00003FBF
+_BOREN_ON                         00003FFF
+_CP_ALL                           00003FEF
+_CP_OFF                           00003FFF
+_HS_OSC                           00003FFE
+_LP_OSC                           00003FFC
+_PWRTEN_OFF                       00003FFF
+_PWRTEN_ON                        00003FF7
+_PWRTE_OFF                        00003FFF
+_PWRTE_ON                         00003FF7
+_RC_OSC                           00003FFF
+_WDTEN_OFF                        00003FFB
+_WDTEN_ON                         00003FFF
+_WDT_OFF                          00003FFB
+_WDT_ON                           00003FFF
+_XT_OSC                           00003FFD
+__16F72                           00000001
+
+
+MEMORY USAGE MAP ('X' = Used,  '-' = Unused)
+
+00000000 : X---XXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000040 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000080 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+000000c0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000100 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000140 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000180 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+000001c0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000200 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000240 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000280 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+000002c0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000300 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000340 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000380 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+000003c0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000400 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000440 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000480 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+000004c0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000500 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000540 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00000580 : XXXXXXXXXXXXXXXX XXXXXXXXXX------ ---------------- ----------------
+00002000 : -------X-------- ---------------- ---------------- ----------------
+
+All other memory blocks unused.
+
+Program Memory Words Used: 1432
+
+
+Errors   :       0
+Warnings :       1 reported,       0 suppressed
+Messages :      12 reported,       0 suppressed
+
